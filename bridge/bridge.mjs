@@ -1170,6 +1170,7 @@ async function work(session, dt) {
   const tag = builderTag(session);
   const mine = contribution(rec, session);
   let n = features.every('canBuild', session, site) ? Math.min(Math.floor(session.credit), config.maxBlocksPerTick) : 0;
+  let freeSkips = 400; // blocks that are already right cost nothing, but keep one tick bounded
   while (n-- > 0 && rec.placed < list.length) {
     if (skip?.has(rec.placed)) {
       rec.placed++; // already standing from before the generators (or the stage) changed
@@ -1179,6 +1180,12 @@ async function work(session, dt) {
     const b = list[rec.placed];
     const out = await cmd(`setblock ${b.x} ${b.y} ${b.z} ${b.block}`);
     if (out.includes('not loaded')) break; // chunk still loading: retry next tick
+    if (out.startsWith('Could not set') && freeSkips-- > 0) {
+      // Identical block already there (lawn, ground, parts kept from before): no walk, no time spent.
+      rec.placed++;
+      n++;
+      continue;
+    }
     rec.placed++;
     session.credit -= 1;
     session.blocks = (session.blocks ?? 0) + 1;

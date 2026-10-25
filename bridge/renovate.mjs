@@ -144,12 +144,18 @@ export class Renovator {
     this.helperId = helper?.id ?? null;
     this.credit = Math.min(this.credit + this.d.rate(district, helper) * dt, 40);
     let n = Math.min(Math.floor(this.credit), maxPerTick);
+    let freeSkips = 400; // changes that turn out to be in place already cost nothing (bounded per tick)
     while (n-- > 0 && st.idx < job.ops.length) {
       const op = job.ops[st.idx];
       if (op.cmd) await cmd(op.cmd);
       else {
         const out = await cmd(`setblock ${op.x} ${op.y} ${op.z} ${op.block}`);
         if (out.includes('not loaded')) break; // chunk still loading: retry next tick
+        if (out.startsWith('Could not set') && freeSkips-- > 0) {
+          st.idx++; // already right in the world: no walk there, no time spent
+          n++;
+          continue;
+        }
         if (helper && st.idx % 3 === 0) {
           const tag = this.d.builderTag(helper);
           await cmd(`tp @e[tag=${tag},limit=1] ${op.x + 0.5} ${op.y + 1} ${op.z + 0.5} ${[0, 90, 180, 270][st.idx % 4]} 20`);
