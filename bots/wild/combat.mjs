@@ -39,7 +39,8 @@ export class Combat {
       const d = e.position.distanceTo(me);
       const r = RANGED.has(e.name) ? radius + 4 : e.name === 'creeper' ? radius : e.name === 'phantom' ? 6 : radius;
       if (d > r || Math.abs(e.position.y - me.y) > 6) continue;
-      // spiders are neutral by day; a creeper right next to us is the top priority
+      // spiders are neutral by day; creepers are not fought (no melee): only a close one matters (flee)
+      if (e.name === 'creeper' && d > 5 && !this.c.hasShield?.() && this.c.brain?.() !== 'naive') continue;
       let score = d;
       if (e.name === 'creeper') score -= d < 5 ? 6 : 2;
       if (RANGED.has(e.name)) score -= 1.5;

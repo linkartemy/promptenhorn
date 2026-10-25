@@ -59,7 +59,7 @@ function danger(c) {
     const d = e.position.distanceTo(me);
     if (d > 12 || Math.abs(e.position.y - me.y) > 6) continue;
     n++;
-    if (e.name === 'creeper' && d < 7 && (!creeper || d < creeper.position.distanceTo(me))) creeper = e;
+    if (e.name === 'creeper' && d < 5 && (!creeper || d < creeper.position.distanceTo(me))) creeper = e;
   }
   return { n, creeper };
 }

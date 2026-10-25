@@ -317,6 +317,7 @@ export class Colonist {
       if (!naive && target.name === 'creeper' && !this.hasShield()) return this.flee(target, 9);
       const pos = target.position.clone();
       const res = await this.combat.fight(target, { retreatHp: naive ? 0 : this.helper ? 9 : 7 });
+      this.dbg(`fight ${target.name}: ${res}`);
       if (res === 'killed') {
         this.stats.kills++;
         this.colony.stat('kills', 1);

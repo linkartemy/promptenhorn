@@ -101,7 +101,7 @@ export const TESTED = new Set([
   'callout', 'idleCallout', 'status', 'toolInHand', 'tests', 'commits', 'push', 'pr', 'apprentices',
   'realTime', 'windows', 'chimney', 'advancements', 'chronicle', 'economy',
   'allay', 'compact', 'storm', 'planMode', 'professions', 'scaffolding', 'alphorn', 'quirks',
-  'townRank', 'francs', 'matterhorn', 'clockBells', 'sbbClock', 'holidays',
+  'townRank', 'francs', 'matterhorn', 'whileAway', 'clockBells', 'sbbClock', 'holidays',
   'residents', 'seated', 'builderLife', 'animals', 'cableCar', 'train', 'paragliders', 'boats', 'chatter',
   // Verified on the test server by the terrain agent, 25.10.2026 (docs/terrain-adaptive-design.md, "Implementation").
   'adaptive-terrain', 'waterfront', 'river-bridges', 'shore-renovation',
