@@ -10,7 +10,16 @@ Es kostet keine Tokens: Die Hooks sind einfache lokale Befehle. Sie geben nichts
 
 ![Das Städtchen bei Tag: der Uhrturm, ein Quartierplatz, Altstadthäuser am See. Rechts die Liste der Chat-Baumeister und ihrer Bauten](docs/screenshots/city-day.webp)
 
-![Bei Nacht: Der Baumeister des Chats "some houses are missing rea…" pflanzt für die öffentlichen Arbeiten des Quartiers eine Fichte](docs/screenshots/builder-night.webp)
+<details open><summary><b>Galerie</b></summary>
+
+<table>
+<tr><td width="50%"><img src="docs/screenshots/city-night-aerial.webp" alt="Das Städtchen bei Nacht: erleuchtete Fenster, rauchende Kamine"><br><sub>Das Städtchen bei Nacht: erleuchtete Fenster, rauchende Kamine</sub></td><td width="50%"><img src="docs/screenshots/harbour-lighthouse-steamer.webp" alt="Leuchtturm, Hafen und der Seedampfer"><br><sub>Leuchtturm, Hafen und der Seedampfer</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/waterfront-cable-car.webp" alt="Das Seequartier und die Seilbahn auf den Gipfel"><br><sub>Das Seequartier und die Seilbahn auf den Gipfel</sub></td><td width="50%"><img src="docs/screenshots/house-facade-builder.webp" alt="Ein fertiges Haus: Blumenkästen, das Chronik-Pult und ein Baumeister-Bot"><br><sub>Ein fertiges Haus: Blumenkästen, das Chronik-Pult und ein Baumeister-Bot</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/house-growth-night.webp" alt="Ein Haus wächst zur 3. Stufe, mit Gerüst"><br><sub>Ein Haus wächst zur 3. Stufe, mit Gerüst</sub></td><td width="50%"><img src="docs/screenshots/builder-night.webp" alt="Ein Baumeister pflanzt eine Fichte für die öffentlichen Arbeiten"><br><sub>Ein Baumeister pflanzt eine Fichte für die öffentlichen Arbeiten</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/colonists-camp.webp" alt="Kolonisten-Modus: eine Überlebenskolonie mit Garten, Lager und Markt"><br><sub><b>Kolonisten-Modus</b>: eine Überlebenskolonie mit Garten, Lager und Markt</sub></td><td></td></tr>
+</table>
+
+</details>
 
 ## So funktioniert es
 

@@ -10,7 +10,16 @@ Non costa nessun token: gli hook sono semplici comandi locali. Non scrivono null
 
 ![La città di giorno: la torre dell'orologio, una piazza di quartiere, le case del centro storico in riva al lago. A destra, l'elenco dei costruttori delle chat e delle loro costruzioni](docs/screenshots/city-day.webp)
 
-![Di notte: il costruttore della chat "some houses are missing rea…" pianta un abete rosso per i lavori pubblici del quartiere](docs/screenshots/builder-night.webp)
+<details open><summary><b>Galleria</b></summary>
+
+<table>
+<tr><td width="50%"><img src="docs/screenshots/city-night-aerial.webp" alt="La città di notte: finestre illuminate e comignoli fumanti"><br><sub>La città di notte: finestre illuminate e comignoli fumanti</sub></td><td width="50%"><img src="docs/screenshots/harbour-lighthouse-steamer.webp" alt="Faro, porto e il battello a vapore del lago"><br><sub>Faro, porto e il battello a vapore del lago</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/waterfront-cable-car.webp" alt="Il quartiere sul lago e la funivia verso la vetta"><br><sub>Il quartiere sul lago e la funivia verso la vetta</sub></td><td width="50%"><img src="docs/screenshots/house-facade-builder.webp" alt="Una casa finita: fioriere, il leggio della cronaca e un bot costruttore"><br><sub>Una casa finita: fioriere, il leggio della cronaca e un bot costruttore</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/house-growth-night.webp" alt="Una casa che cresce fino alla fase 3, con i ponteggi"><br><sub>Una casa che cresce fino alla fase 3, con i ponteggi</sub></td><td width="50%"><img src="docs/screenshots/builder-night.webp" alt="Un costruttore pianta un abete per i lavori pubblici del quartiere"><br><sub>Un costruttore pianta un abete per i lavori pubblici del quartiere</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/colonists-camp.webp" alt="Modalità Coloni: una colonia di sopravvivenza con orto, magazzino e mercato"><br><sub><b>Modalità Coloni</b>: una colonia di sopravvivenza con orto, magazzino e mercato</sub></td><td></td></tr>
+</table>
+
+</details>
 
 ## Come funziona
 

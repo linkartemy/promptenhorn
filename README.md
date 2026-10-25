@@ -10,7 +10,16 @@ It costs no tokens: the hooks are plain local commands. They print nothing to th
 
 ![The town by day: the clock tower, a district square, old-town houses by the lake. On the right, the list of chat builders and their builds](docs/screenshots/city-day.webp)
 
-![At night: the builder of the chat "some houses are missing rea…" plants a spruce for the district's public works](docs/screenshots/builder-night.webp)
+<details open><summary><b>Gallery</b></summary>
+
+<table>
+<tr><td width="50%"><img src="docs/screenshots/city-night-aerial.webp" alt="The town at night: lit windows and chimney smoke"><br><sub>The town at night: lit windows and chimney smoke</sub></td><td width="50%"><img src="docs/screenshots/harbour-lighthouse-steamer.webp" alt="Lighthouse, harbour and the lake steamer"><br><sub>Lighthouse, harbour and the lake steamer</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/waterfront-cable-car.webp" alt="The lakeside quarter and the cable car to the summit"><br><sub>The lakeside quarter and the cable car to the summit</sub></td><td width="50%"><img src="docs/screenshots/house-facade-builder.webp" alt="A finished house: flower boxes, the chronicle lectern and a live builder bot"><br><sub>A finished house: flower boxes, the chronicle lectern and a live builder bot</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/house-growth-night.webp" alt="A house growing to stage 3, with scaffolding"><br><sub>A house growing to stage 3, with scaffolding</sub></td><td width="50%"><img src="docs/screenshots/builder-night.webp" alt="A builder planting a spruce for the district’s public works"><br><sub>A builder planting a spruce for the district’s public works</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/colonists-camp.webp" alt="Colonists mode: a survival colony with a farm, storage and a market"><br><sub><b>Colonists mode</b>: a survival colony with a farm, storage and a market</sub></td><td></td></tr>
+</table>
+
+</details>
 
 ## How it works
 
@@ -231,7 +240,7 @@ Plan for: the colony server (Paper, `-Xmx2G`, typically 1.2–1.8 GB in use), th
 - **Survival**: retreat to the lit plaza at low health and eat there; creepers are never fought without a shield (walled off in tunnels, fled from outside); eating starts at food ≤ 14; a standard kit (pickaxe, sword, axe, food, torches, blocks, armour) is refilled from storage; worn tools are replaced before they break; no swimming (frozen ponds), no digging next to water or lava, no digging straight down; stuck detection re-paths, re-centres and, as a last resort, calls the colonist home.
 - **Mines**: each colonist digs its own 1-wide staircase down from the plaza edge, levels out at ore depth, mines ores it sees and lights the tunnel with torches.
 - **Storage**: five chests by category (ores, food, wood, stone, misc; marker block behind each) are the single source of truth; surplus above the colony reserve goes to the **market chest** next to Märt the merchant and becomes credits ("Fr.").
-- **Economy**: sale prices reflect effort (log 1, cobblestone 0.25, coal 2, raw iron 3, diamond 25); a block costs its raw materials times 1.2, imported blocks have their own price (calcite 0.8, glass pane 0.25, cut copper 1.6, terracotta 1.2, lantern 2.5, bed 2.5). Iron is not sold while anyone still lacks iron gear. Prices: `wild/economy.mjs`.
+- **Economy**: sale prices reflect effort (log 1, cobblestone 0.25, coal 1, raw iron 3, diamond 25); a block costs its raw materials times 1.2, imported blocks have their own price (calcite 0.8, glass pane 0.25, cut copper 1.6, terracotta 1.2, lantern 2.5, bed 2.5). Iron is not sold while anyone still lacks iron gear. Prices: `wild/economy.mjs`.
 - **Construction**: the builder buys the next batch of 40 blocks, the merchant hands them over, and the builder places them by hand in survival (standing on the ground, inside the house, or on the attic floor reached by the ladder). What cannot be placed by hand (no support, tricky blocks, unreachable spots, wrong orientation) is set by the "crew" with RCON while the builder looks at it and swings. The first projects are colonist's cabins (`wild/houses.mjs`, 342 blocks); city generators need 21×21 plots and are not used yet.
 
 ## Stopping and uninstalling

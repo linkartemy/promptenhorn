@@ -10,7 +10,16 @@ Cela ne coûte aucun token : les hooks sont de simples commandes locales. Ils n'
 
 ![La ville de jour : la tour de l'horloge, une place de quartier, des maisons de la vieille ville au bord du lac. À droite, la liste des bâtisseurs des chats et de leurs constructions](docs/screenshots/city-day.webp)
 
-![La nuit : le bâtisseur du chat "some houses are missing rea…" plante un épicéa pour les travaux publics du quartier](docs/screenshots/builder-night.webp)
+<details open><summary><b>Galerie</b></summary>
+
+<table>
+<tr><td width="50%"><img src="docs/screenshots/city-night-aerial.webp" alt="La ville la nuit : fenêtres éclairées et cheminées qui fument"><br><sub>La ville la nuit : fenêtres éclairées et cheminées qui fument</sub></td><td width="50%"><img src="docs/screenshots/harbour-lighthouse-steamer.webp" alt="Phare, port et le vapeur du lac"><br><sub>Phare, port et le vapeur du lac</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/waterfront-cable-car.webp" alt="Le quartier du lac et le téléphérique vers le sommet"><br><sub>Le quartier du lac et le téléphérique vers le sommet</sub></td><td width="50%"><img src="docs/screenshots/house-facade-builder.webp" alt="Une maison terminée : jardinières, le pupitre de la chronique et un bot bâtisseur"><br><sub>Une maison terminée : jardinières, le pupitre de la chronique et un bot bâtisseur</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/house-growth-night.webp" alt="Une maison qui grandit jusqu’à l’étape 3, échafaudages compris"><br><sub>Une maison qui grandit jusqu’à l’étape 3, échafaudages compris</sub></td><td width="50%"><img src="docs/screenshots/builder-night.webp" alt="Un bâtisseur plante un épicéa pour les travaux publics du quartier"><br><sub>Un bâtisseur plante un épicéa pour les travaux publics du quartier</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/colonists-camp.webp" alt="Mode Colons : une colonie de survie avec potager, entrepôt et marché"><br><sub><b>Mode Colons</b> : une colonie de survie avec potager, entrepôt et marché</sub></td><td></td></tr>
+</table>
+
+</details>
 
 ## Comment ça marche
 

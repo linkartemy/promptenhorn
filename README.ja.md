@@ -10,7 +10,16 @@ Claude Code のチャットはひとつひとつが Minecraft の建築家にな
 
 ![昼の町：時計塔、街区の広場、湖畔の旧市街の家々。右側にはチャットの建築家とその建物の一覧](docs/screenshots/city-day.webp)
 
-![夜：チャット「some houses are missing rea…」の建築家が、街区の公共事業としてトウヒを植えているところ](docs/screenshots/builder-night.webp)
+<details open><summary><b>ギャラリー</b></summary>
+
+<table>
+<tr><td width="50%"><img src="docs/screenshots/city-night-aerial.webp" alt="夜の町：窓の明かりと煙突の煙"><br><sub>夜の町：窓の明かりと煙突の煙</sub></td><td width="50%"><img src="docs/screenshots/harbour-lighthouse-steamer.webp" alt="灯台、港、湖の蒸気船"><br><sub>灯台、港、湖の蒸気船</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/waterfront-cable-car.webp" alt="湖畔の街区と山頂へのロープウェイ"><br><sub>湖畔の街区と山頂へのロープウェイ</sub></td><td width="50%"><img src="docs/screenshots/house-facade-builder.webp" alt="完成した家：花箱、年代記の書見台、建築ボット"><br><sub>完成した家：花箱、年代記の書見台、建築ボット</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/house-growth-night.webp" alt="足場を組んで第3段階へ成長する家"><br><sub>足場を組んで第3段階へ成長する家</sub></td><td width="50%"><img src="docs/screenshots/builder-night.webp" alt="街区の公共事業としてトウヒを植える建築家"><br><sub>街区の公共事業としてトウヒを植える建築家</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/colonists-camp.webp" alt="コロニストモード：畑・倉庫・市場のあるサバイバルコロニー"><br><sub><b>コロニストモード</b>：畑・倉庫・市場のあるサバイバルコロニー</sub></td><td></td></tr>
+</table>
+
+</details>
 
 ## 仕組み
 

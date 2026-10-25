@@ -10,7 +10,16 @@
 
 ![Город днём: часовая башня, площадь квартала, дома старого города у озера. Справа — список чатов-строителей и их стройки](docs/screenshots/city-day.webp)
 
-![Ночью: строитель чата «в некоторых домах нет реа…» сажает ель для общих работ квартала](docs/screenshots/builder-night.webp)
+<details open><summary><b>Галерея</b></summary>
+
+<table>
+<tr><td width="50%"><img src="docs/screenshots/city-night-aerial.webp" alt="Город ночью: свет в окнах и дым из труб"><br><sub>Город ночью: свет в окнах и дым из труб</sub></td><td width="50%"><img src="docs/screenshots/harbour-lighthouse-steamer.webp" alt="Маяк, гавань и озёрный пароход"><br><sub>Маяк, гавань и озёрный пароход</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/waterfront-cable-car.webp" alt="Квартал у озера и канатная дорога на вершину"><br><sub>Квартал у озера и канатная дорога на вершину</sub></td><td width="50%"><img src="docs/screenshots/house-facade-builder.webp" alt="Готовый дом: ящики с цветами, кафедра с хроникой и живой бот-строитель"><br><sub>Готовый дом: ящики с цветами, кафедра с хроникой и живой бот-строитель</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/house-growth-night.webp" alt="Дом растёт до третьего этапа, со строительными лесами"><br><sub>Дом растёт до третьего этапа, со строительными лесами</sub></td><td width="50%"><img src="docs/screenshots/builder-night.webp" alt="Строитель сажает ель для общих работ квартала"><br><sub>Строитель сажает ель для общих работ квартала</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/colonists-camp.webp" alt="Режим «Колонисты»: колония выживания с огородом, складом и рынком"><br><sub><b>Режим «Колонисты»</b>: колония выживания с огородом, складом и рынком</sub></td><td></td></tr>
+</table>
+
+</details>
 
 ## Как это устроено
 

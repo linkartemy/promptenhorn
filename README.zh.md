@@ -10,7 +10,16 @@
 
 ![白天的小镇：钟楼、街区广场、湖畔的老城房屋。右侧是对话建造者及其建筑的列表](docs/screenshots/city-day.webp)
 
-![夜晚：对话“some houses are missing rea…”的建造者正在为街区的公共工程种下一棵云杉](docs/screenshots/builder-night.webp)
+<details open><summary><b>画廊</b></summary>
+
+<table>
+<tr><td width="50%"><img src="docs/screenshots/city-night-aerial.webp" alt="夜晚的小镇：窗户亮灯，烟囱冒烟"><br><sub>夜晚的小镇：窗户亮灯，烟囱冒烟</sub></td><td width="50%"><img src="docs/screenshots/harbour-lighthouse-steamer.webp" alt="灯塔、港口和湖上的蒸汽船"><br><sub>灯塔、港口和湖上的蒸汽船</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/waterfront-cable-car.webp" alt="湖畔街区和通往山顶的缆车"><br><sub>湖畔街区和通往山顶的缆车</sub></td><td width="50%"><img src="docs/screenshots/house-facade-builder.webp" alt="建成的房子：花箱、编年史讲台和一个建筑机器人"><br><sub>建成的房子：花箱、编年史讲台和一个建筑机器人</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/house-growth-night.webp" alt="一栋房子正在扩建到第三阶段，搭着脚手架"><br><sub>一栋房子正在扩建到第三阶段，搭着脚手架</sub></td><td width="50%"><img src="docs/screenshots/builder-night.webp" alt="建筑者为街区的公共工程种下一棵云杉"><br><sub>建筑者为街区的公共工程种下一棵云杉</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/colonists-camp.webp" alt="殖民者模式：拥有菜园、仓库和市场的生存殖民地"><br><sub><b>殖民者模式</b>：拥有菜园、仓库和市场的生存殖民地</sub></td><td></td></tr>
+</table>
+
+</details>
 
 ## 工作原理
 

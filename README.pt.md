@@ -10,7 +10,16 @@ Não custa tokens: os hooks são simples comandos locais. Eles não escrevem nad
 
 ![A cidade de dia: a torre do relógio, a praça de um bairro e casas do centro histórico à beira do lago. À direita, a lista de construtores dos chats e suas obras](docs/screenshots/city-day.webp)
 
-![À noite: o construtor do chat "some houses are missing rea…" planta um abeto como parte das obras públicas do bairro](docs/screenshots/builder-night.webp)
+<details open><summary><b>Galeria</b></summary>
+
+<table>
+<tr><td width="50%"><img src="docs/screenshots/city-night-aerial.webp" alt="A cidade à noite: janelas acesas e chaminés fumegando"><br><sub>A cidade à noite: janelas acesas e chaminés fumegando</sub></td><td width="50%"><img src="docs/screenshots/harbour-lighthouse-steamer.webp" alt="Farol, porto e o vapor do lago"><br><sub>Farol, porto e o vapor do lago</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/waterfront-cable-car.webp" alt="O bairro à beira do lago e o teleférico até o cume"><br><sub>O bairro à beira do lago e o teleférico até o cume</sub></td><td width="50%"><img src="docs/screenshots/house-facade-builder.webp" alt="Uma casa pronta: floreiras, o atril da crônica e um bot construtor"><br><sub>Uma casa pronta: floreiras, o atril da crônica e um bot construtor</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/house-growth-night.webp" alt="Uma casa crescendo até a etapa 3, com andaimes"><br><sub>Uma casa crescendo até a etapa 3, com andaimes</sub></td><td width="50%"><img src="docs/screenshots/builder-night.webp" alt="Um construtor planta um abeto para as obras públicas do bairro"><br><sub>Um construtor planta um abeto para as obras públicas do bairro</sub></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/colonists-camp.webp" alt="Modo Colonos: uma colônia de sobrevivência com horta, depósito e mercado"><br><sub><b>Modo Colonos</b>: uma colônia de sobrevivência com horta, depósito e mercado</sub></td><td></td></tr>
+</table>
+
+</details>
 
 ## Como funciona
 
