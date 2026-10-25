@@ -218,7 +218,11 @@ const matterhorn = {
   },
 };
 
-// --- 24: the town hall — a dialog with a teleport button for every builder, waiting ones first.
+// --- 24: the town hall — a dialog with a teleport and a "follow" button for every builder, waiting ones first.
+
+// Follow buttons can't run two commands (gamemode + spectate), so they set a trigger value that the
+// bridge resolves: index in followTargets -> session id.
+let followTargets = [];
 
 function hallDialog(ctx) {
   const order = (s) => {
@@ -227,6 +231,7 @@ function hallDialog(ctx) {
   };
   const actions = [];
   let size = 300;
+  followTargets = [];
   for (const s of ctx.sessions().filter((x) => x.at).sort((a, b) => order(a) - order(b))) {
     const site = ctx.siteOf(s.at);
     if (!site) continue;
@@ -234,17 +239,23 @@ function hallDialog(ctx) {
     const [x, y, z] = site.front;
     const pct = Math.floor((100 * site.rec.placed) / Math.max(1, site.rec.total));
     const label = `${o === 0 ? '⌛ ' : o === 1 ? '⚒ ' : '☾ '}${ctx.cleanText(s.name, 22)} · ${ctx.cleanText(site.label, 18)} ${pct}%`;
-    const a = { label: { text: label, color: o === 0 ? 'red' : o === 1 ? 'green' : 'gray' }, action: { type: 'run_command', command: `/tp @s ${x + 0.5} ${y} ${z + 2.5}` } };
-    const len = Buffer.byteLength(JSON.stringify(a));
+    // Teleport next to the builder itself (falls back to the plot front if it isn't loaded/spawned).
+    const tp = { label: { text: label, color: o === 0 ? 'red' : o === 1 ? 'green' : 'gray' }, tooltip: { text: 'Телепорт к строителю' }, action: { type: 'run_command', command: `/execute unless entity ${ctx.builderSel(s)} run tp @s ${x + 0.5} ${y} ${z + 2.5}` } };
+    const tpLive = { ...tp, action: { type: 'run_command', command: `/tp @s ${ctx.builderSel(s)}` } };
+    const follow = { label: { text: '👁', color: 'aqua' }, tooltip: { text: 'Следить: камера едет за строителем (Shift — выйти)' }, width: 30, action: { type: 'run_command', command: `/trigger alps_follow set ${followTargets.length + 1}` } };
+    const entry = [s.at && ctx.rt(s).spawned !== false ? tpLive : tp, follow];
+    const len = Buffer.byteLength(JSON.stringify(entry));
     if (size + len > 1250) break; // one RCON packet
     size += len;
-    actions.push(a);
+    followTargets.push(s.id);
+    actions.push(...entry);
   }
   const sq = ctx.square();
   if (sq) actions.push({ label: { text: `⛰ ${ctx.config.cityName} (центр)`, color: 'gold' }, action: { type: 'run_command', command: `/tp @s ${ctx.state.city.cx} ${sq.y + 2} ${ctx.state.city.cz + 7}` } });
-  actions.push({ label: { text: '⚙ Настройки', color: 'aqua' }, action: { type: 'open_url', url: `http://127.0.0.1:${ctx.port()}/` } });
-  const body = { type: 'plain_message', contents: { text: actions.length > 2 ? 'Кто ждёт тебя — сверху. Клик — телепорт.' : 'Пока ни одного строителя.' } };
-  return { type: 'multi_action', title: { text: `Ратуша ${ctx.config.cityName}` }, body, actions, columns: 1 };
+  actions.push({ label: { text: '🗺 Карта города', color: 'aqua' }, tooltip: { text: 'Живая карта в браузере' }, action: { type: 'open_url', url: `http://127.0.0.1:${ctx.port()}/map` } });
+  actions.push({ label: { text: '⚙ Настройки', color: 'aqua' }, width: 30, action: { type: 'open_url', url: `http://127.0.0.1:${ctx.port()}/` } });
+  const body = { type: 'plain_message', contents: { text: followTargets.length ? 'Кто ждёт тебя — сверху. Имя — телепорт, 👁 — следить.' : 'Пока ни одного строителя.' } };
+  return { type: 'multi_action', title: { text: `Ратуша ${ctx.config.cityName}` }, body, actions, columns: 2 };
 }
 
 const townHall = {
@@ -255,10 +266,12 @@ const townHall = {
   presets: ['basic'],
   async setup(ctx) {
     await ctx.cmd('scoreboard objectives add alps_hall trigger');
+    await ctx.cmd('scoreboard objectives add alps_follow trigger');
     await ensureDatapack(ctx).catch(() => false); // pause-menu button; the chat link works without it
   },
   onPlayers(ctx) {
     ctx.fx.push('scoreboard players enable @a alps_hall', { key: 'hall:enable' });
+    ctx.fx.push('scoreboard players enable @a alps_follow', { key: 'follow:enable' });
   },
   async onPlayerJoin(ctx, name) {
     await ctx.tellraw(name, [{ text: '  ⌂ ', color: 'gray' }, { text: '[Ратуша]', color: 'aqua', click_event: { action: 'run_command', command: '/trigger alps_hall' }, hover_event: { action: 'show_text', value: 'Все строители и телепорт к ним' } }, { text: '  список строителей; ещё она есть в меню паузы', color: 'gray' }]);
@@ -266,6 +279,7 @@ const townHall = {
   async onTick(ctx, now) {
     if (now < (townHall.next ?? 0)) return;
     townHall.next = now + 1000;
+    await followRequests(ctx);
     if (!(await ctx.cmd('execute if entity @a[scores={alps_hall=1..}]')).includes('passed')) return;
     for (const name of ctx.players()) {
       if (!(await ctx.cmd(`execute if entity @a[name=${name},scores={alps_hall=1..}]`)).includes('passed')) continue;
@@ -275,6 +289,32 @@ const townHall = {
     }
   },
 };
+
+/** Resolves "👁" clicks: spectator camera attached to the chosen builder. */
+async function followRequests(ctx) {
+  if (!(await ctx.cmd('execute if entity @a[scores={alps_follow=1..}]')).includes('passed')) return;
+  for (const name of ctx.players()) {
+    const out = await ctx.cmd(`scoreboard players get ${name} alps_follow`);
+    const n = Number(out.match(/has (d+)/)?.[1] ?? 0);
+    if (!n) continue;
+    await ctx.cmd(`scoreboard players set ${name} alps_follow 0`);
+    await ctx.cmd(`scoreboard players enable ${name} alps_follow`);
+    const s = ctx.sessions().find((x) => x.id === followTargets[n - 1]);
+    if (!s || !(await ctx.cmd(`execute if entity ${ctx.builderSel(s)}`)).includes('passed')) {
+      await ctx.tellraw(name, [{ text: 'Строитель сейчас не на стройке — открой Ратушу ещё раз.', color: 'gray' }]);
+      continue;
+    }
+    await ctx.cmd(`gamemode spectator ${name}`);
+    await ctx.cmd(`spectate ${ctx.builderSel(s)} ${name}`);
+    await ctx.tellraw(name, [
+      { text: '👁 Следишь за ', color: 'gray' }, { text: ctx.cleanText(s.name, 26), color: 'yellow' },
+      { text: '. Shift — отцепиться. ', color: 'gray' },
+      { text: '[в творческий]', color: 'aqua', click_event: { action: 'run_command', command: '/gamemode creative' } },
+      { text: ' ', color: 'gray' },
+      { text: '[Ратуша]', color: 'aqua', click_event: { action: 'run_command', command: '/trigger alps_hall' } },
+    ]);
+  }
+}
 
 // --- 25: builders on the locator bar; waiting ones red.
 

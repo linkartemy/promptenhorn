@@ -36,3 +36,4 @@ server/plugins/
 .dev/*state*.json
 .dev/old/
 backups/
+bridge.log

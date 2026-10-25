@@ -51,6 +51,7 @@ export const settingsPage = () => `<!doctype html>
 <body>
 <main>
   <h1>Promptenhorn <span>⛰</span></h1>
+  <p class="sub"><a href="/map" style="color:var(--accent)">Карта города и строителей →</a></p>
   <p class="sub">Что показывать в мире. Меняется сразу, без перезапуска; сохраняется в <code>config.json</code>.</p>
 
   <h2>Пресет</h2>

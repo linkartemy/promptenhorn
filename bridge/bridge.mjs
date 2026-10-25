@@ -19,6 +19,7 @@ import { FORMS, formList, formSize, summitList } from './smallforms.mjs';
 import { Settings, readConfigFile } from './settings.mjs';
 import { FEATURES, FeatureHost } from './features/index.mjs';
 import { PeakSurvey } from './peaks.mjs';
+import { MapPage } from './map-page.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -755,6 +756,7 @@ async function moveBuilderToFront(session, site) {
   const [hx, hz] = site.look;
   const yaw = Math.round((Math.atan2(-(hx - wx), hz - wz) * 180) / Math.PI);
   await cmd(`tp @e[tag=${builderTag(session)},limit=1] ${wx + 0.5} ${wy} ${wz + 0.5} ${yaw} 0`);
+  Object.assign(rt(session), { pos: [wx + 0.5, wy, wz + 0.5], posAt: site.key }); // for the web map
   await refreshHand(session);
 }
 
@@ -1183,6 +1185,7 @@ async function work(session, dt) {
     mine.blocks++;
     if (rec.placed % 3 === 0) {
       await cmd(`tp @e[tag=${tag},limit=1] ${b.x + 0.5} ${b.y + 1} ${b.z + 0.5} ${[0, 90, 180, 270][rec.placed % 4]} 20`);
+      Object.assign(rt(session), { pos: [b.x + 0.5, b.y + 1, b.z + 0.5], posAt: site.key }); // for the web map
       await cmd(`particle minecraft:happy_villager ${b.x + 0.5} ${b.y + 0.7} ${b.z + 0.5} 0.3 0.3 0.3 0 2`);
       await cmd(`playsound minecraft:${soundFor(b.block)} block @a ${b.x} ${b.y} ${b.z} 0.5 1`);
     }
@@ -1511,6 +1514,13 @@ features.settings = settings;
 settings.watch();
 log(`Preset ${settings.preset}: ${FEATURES.filter((f) => settings.on(f.id)).map((f) => f.id).join(', ') || 'no extras'}`);
 
+// Live web map at /map (bridge state only; RCON just for its teleport / follow buttons).
+const mapPage = new MapPage({
+  state: () => state, config, rt, siteOf, labelOf, cmd, builderSel: ctx.builderSel, gens, renovator, log,
+  players: () => [...knownPlayers],
+  connected: () => rcon.connected,
+});
+
 // ------------------------------------------------------------------ main loop
 
 let lastTick = Date.now();
@@ -1601,6 +1611,7 @@ const server = http.createServer((req, res) => {
     }, null, 2));
     return;
   }
+  if (mapPage.handle(req, res, config.port)) return;
   if (settings.handle(req, res, config.port)) return;
   res.writeHead(404).end();
 });
