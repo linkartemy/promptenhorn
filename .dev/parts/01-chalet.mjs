@@ -58,7 +58,7 @@ export function chalet(rng) {
     for (const [a, b] of groups)
       for (const sgn of [-1, 1]) win(bp, rng, sgn > 0 ? cx + a : cx - b, yb + 1, z2, 'south', { w: b - a + 1, h: 2, shutters: shutter });
     bp.door(cx, yb + 1, z2, tw.door, 'south');
-    for (const x of [cx - 3, cx + 2]) win(bp, rng, x, yb + 1, z1, 'north', { w: 2, h: 2, shutters: shutter, box: trimW.trapdoor });
+    win(bp, rng, cx + 2, yb + 1, z1, 'north', { w: 2, h: 2, shutters: shutter, box: trimW.trapdoor });
   }
   for (const z of sideZ) {
     win(bp, rng, x1, 2, z, 'west', { h: 2, shutters: shutter });

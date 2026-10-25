@@ -23,6 +23,10 @@ function marketStall(bp, rng, x0, z0, face) {
 }
 
 export function square(rng) {
+  return autoMarks(squareBlocks(rng), 'square');
+}
+
+function squareBlocks(rng) {
   const bp = new Blueprint();
   const c = 8;
   const r = (x, z) => Math.hypot(x - c, z - c);
@@ -75,6 +79,9 @@ export function square(rng) {
   marketStall(bp, rng, -1, 4, 'east');
   marketStall(bp, rng, 15, 10, 'west');
   flagPole(bp, c, -1, 8);
+  // Town bell on a pedestal at the south edge: the meeting point.
+  bp.set(c, 1, 17, 'chiseled_stone_bricks');
+  bp.set(c, 2, 17, 'bell[attachment=floor,facing=south]');
   const [b1, d1] = rng.pick(CANTONS);
   const [b2, d2] = rng.pick(CANTONS);
   flagPole(bp, c - 3, -1, 6, `${b1}_banner[rotation=0]${d1}`);
@@ -85,6 +92,10 @@ export function square(rng) {
 // ================================================================ district plaza (cosy village square)
 
 export function plaza(rng) {
+  return autoMarks(plazaBlocks(rng), 'plaza');
+}
+
+function plazaBlocks(rng) {
   const bp = new Blueprint();
   const c = 8;
   const cob = () => rng.weighted([['cobblestone', 3], ['mossy_cobblestone', 1], ['stone_bricks', 1], ['andesite', 0.6]]);
@@ -112,12 +123,14 @@ export function plaza(rng) {
   broadTree(bp, tx, tz, 5, 3, 'oak', -2, 18);
   for (const f of Object.keys(DIR)) bp.set(tx + DIR[f][0], 1, tz + DIR[f][1], `spruce_stairs[facing=${OPP[f]},half=bottom]`);
   for (const [dx, dz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) bp.set(tx + dx, 1, tz + dz, 'spruce_slab[type=bottom]');
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) bp.set(tx + dx, 0, tz + dz, 'rooted_dirt');
   // Benches, lamps, flag.
   bench(bp, c - 1, 13, 'south', 3, 'spruce');
   lamp(bp, 4, 12, 3);
   lamp(bp, 12, 12, 3);
   flagPole(bp, 16 - tx, 2, 7);
   // Notice board.
+  bp.fill(11, 0, 15, 15, 0, 16, 'cobblestone');
   bp.fill(12, 1, 15, 12, 3, 15, 'spruce_log[axis=y]');
   bp.fill(14, 1, 15, 14, 3, 15, 'spruce_log[axis=y]');
   bp.fill(13, 2, 15, 13, 3, 15, 'spruce_planks');
@@ -125,6 +138,7 @@ export function plaza(rng) {
     bp.set(x, 4, 15, 'spruce_slab[type=bottom]');
     bp.set(x, 4, 16, 'spruce_stairs[facing=north,half=bottom]');
   }
+  bp.set(11, 3, 15, 'bell[attachment=ceiling,facing=south]');
   const notes = [['GEMEINDE', 'Markt: Samstag', '8 - 12 Uhr', ''], ['Turnverein', 'Schwingfest', 'Sonntag 14 Uhr', ''], ['Chor', 'Probe Mittwoch', '', ''], ['Velo', 'zu verkaufen', '', '']];
   bp.set(12, 2, 16, `spruce_wall_sign[facing=south]${signData(rng.pick(notes))}`);
   bp.set(13, 3, 16, `spruce_wall_sign[facing=south]${signData(notes[0])}`);

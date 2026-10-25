@@ -11,7 +11,7 @@
 import { createRequire } from 'node:module';
 import { Vec3 } from 'vec3';
 import { generate } from '../bridge/buildings.mjs';
-import { makeBot, rcon, sleep, log, parseBlock, itemFor } from './common.mjs';
+import { makeBot, rcon, sleep, log, parseBlock, itemFor, walkTo } from './common.mjs';
 
 const require = createRequire(import.meta.url);
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
@@ -120,48 +120,97 @@ async function withTimeout(promise, ms, onTimeout) {
   }
 }
 
-/** A spot outside the target cell, on the plot's outer side of p, where the bot can hover/stand. */
-function outsideSpot(p) {
-  const c = new Vec3(x0 + 10, p.y, z0 + 10);
-  let dx = p.x - c.x;
-  let dz = p.z - c.z;
-  const len = Math.hypot(dx, dz) || 1;
-  dx /= len;
-  dz /= len;
-  for (const d of [2, 3, 1.5, 4]) {
-    const s = new Vec3(Math.floor(p.x + dx * d) + 0.5, p.y - 1, Math.floor(p.z + dz * d) + 0.5);
-    if (free(s.floored()) && free(s.floored().offset(0, 1, 0)) && !occupiesAt(s, p)) return s;
-  }
-  return new Vec3(p.x + 0.5, p.y + 2, p.z + 0.5); // above it
+/**
+ * Picks where to stand for the next block: a free 1x2 cell within reach of p that is not a cell
+ * still waiting to be built, preferring spots with ground below (no flying) and spots that also
+ * cover many of the upcoming blocks (fewer moves).
+ */
+let upcoming = [];
+const pending = new Set();
+function pickSpot(p) {
+  const cur = bot.entity.position;
+  let best = null;
+  for (let dx = -4; dx <= 4; dx++)
+    for (let dz = -4; dz <= 4; dz++)
+      for (const dy of [-2, -1, 0, 1]) {
+        const c = new Vec3(p.x + dx, p.y + dy, p.z + dz);
+        const s = c.offset(0.5, 0, 0.5);
+        const e = s.offset(0, 1.62, 0);
+        if (e.distanceTo(p.offset(0.5, 0.5, 0.5)) > REACH - 0.4) continue;
+        if (occupiesAt(s, p)) continue;
+        if (!free(c) || !free(c.offset(0, 1, 0))) continue;
+        if (pending.has(c.toString()) || pending.has(c.offset(0, 1, 0).toString())) continue;
+        let score = 0;
+        for (const q of upcoming) if (e.distanceTo(q.offset(0.5, 0.5, 0.5)) <= REACH - 0.2 && !occupiesAt(s, q)) score++;
+        const ground = !free(c.offset(0, -1, 0));
+        score += ground ? 6 : 0;
+        score -= 0.15 * s.distanceTo(cur);
+        if (!best || score > best.score) best = { s, score, ground };
+      }
+  return best;
 }
 function occupiesAt(s, p) {
   return s.x + 0.3 > p.x && s.x - 0.3 < p.x + 1 && s.z + 0.3 > p.z && s.z - 0.3 < p.z + 1 && s.y + 1.8 > p.y && s.y < p.y + 1;
 }
+/** Straight flight is safe if every sampled point keeps the 0.6x1.8 body out of solid blocks. */
+function clearLine(a, b) {
+  const n = Math.ceil(a.distanceTo(b) * 3) + 1;
+  for (let i = 0; i <= n; i++) {
+    const q = a.plus(b.minus(a).scaled(i / n));
+    for (const [ox, oz] of [[-0.3, -0.3], [0.3, 0.3], [-0.3, 0.3], [0.3, -0.3]])
+      for (const oy of [0.05, 0.9, 1.75]) if (!free(q.offset(ox, oy, oz).floored())) return false;
+  }
+  return true;
+}
+let topY = 0; // highest block placed so far
+async function fly(s) {
+  const a = bot.entity.position.clone();
+  if (clearLine(a, s)) return withTimeout(bot.creative.flyTo(s), 8000);
+  // creative-player style hop: straight up, across above the building, straight down
+  const hy = Math.max(topY + 2, a.y, s.y);
+  const up = new Vec3(a.x, hy, a.z);
+  const over = new Vec3(s.x, hy, s.z);
+  if (!clearLine(a, up) || !clearLine(over, s)) throw new Error('no clear flight');
+  await withTimeout(bot.creative.flyTo(up), 8000);
+  await withTimeout(bot.creative.flyTo(over), 8000);
+  await withTimeout(bot.creative.flyTo(s), 8000);
+}
 
+const timing = { reachMs: 0, placeMs: 0, rconMs: 0 };
+const PREFER_FLY = !!args.fly;
 async function reach(p) {
   if (inReach(p) && !occupies(p)) return true;
-  // 1. walk (pathfinder; may pillar up with dirt scaffolding)
-  if (bot.entity.position.distanceTo(p) < 40) {
-    try {
+  const t = Date.now();
+  try {
+    return await reachInner(p);
+  } finally {
+    timing.reachMs += Date.now() - t;
+  }
+}
+async function reachInner(p) {
+  const spot = pickSpot(p);
+  if (spot) {
+    // 1. walk when the spot is on the ground and not far
+    if (spot.ground && !PREFER_FLY && bot.entity.position.distanceTo(spot.s) < 24) {
       bot.creative.stopFlying();
-      await withTimeout(bot.pathfinder.goto(new goals.GoalNear(p.x, p.y, p.z, 3)), 8000, () => bot.pathfinder.stop());
+      const res = await walkTo(bot, new goals.GoalBlock(spot.s.x, spot.s.y, spot.s.z), { timeout: 8000, retries: 2 });
       if (inReach(p) && !occupies(p)) {
         stats.walk++;
         return true;
       }
-    } catch {}
-    stats.walkFail++;
-  }
-  // 2. creative flight to a spot just outside the wall
-  try {
-    await withTimeout(bot.creative.flyTo(outsideSpot(p)), 6000);
-    if (inReach(p) && !occupies(p)) {
-      stats.fly++;
-      return true;
+      if (!res.ok) stats.walkFail++;
     }
-  } catch {}
-  // 3. teleport (hybrid crutch)
-  const s = outsideSpot(p);
+    // 2. creative flight
+    try {
+      await fly(spot.s);
+      if (inReach(p) && !occupies(p)) {
+        stats.fly++;
+        return true;
+      }
+    } catch {}
+  }
+  // 3. teleport (crutch)
+  const s = spot?.s ?? p.offset(0.5, 2, 0.5);
   await cmd(`tp ${NAME} ${s.x} ${s.y} ${s.z}`);
   await bot.waitForTicks(3);
   stats.tp++;
@@ -283,6 +332,14 @@ async function hold(itemName) {
 }
 
 async function placeOnce(p, t, plan) {
+  const t0p = Date.now();
+  try {
+    return await placeOnceInner(p, t, plan);
+  } finally {
+    timing.placeMs += Date.now() - t0p;
+  }
+}
+async function placeOnceInner(p, t, plan) {
   const look = eye();
   const target = p.offset(0.5, 0.5, 0.5);
   const d = target.minus(look);
@@ -452,12 +509,9 @@ async function placeByHand(b) {
 async function placeHybrid(b) {
   const p = b.pos;
   if (bot.entity.position.distanceTo(p) > 6) {
-    try {
-      await withTimeout(bot.pathfinder.goto(new goals.GoalNear(p.x, Math.max(y0, p.y - 4), p.z, 4)), 6000, () => bot.pathfinder.stop());
-      stats.walk++;
-    } catch {
-      stats.walkFail++;
-    }
+    const res = await walkTo(bot, new goals.GoalNear(p.x, Math.max(y0, p.y - 4), p.z, 4), { timeout: 6000, retries: 2 });
+    if (res.ok) stats.walk++;
+    else stats.walkFail++;
   }
   await bot.lookAt(p.offset(0.5, 0.5, 0.5), true);
   bot.swingArm('right');
@@ -478,11 +532,8 @@ const onPath = (rr) => log('  path', rr.status, rr.path.length, rr.path.at(-1) ?
 const onReset = (why) => { const p = bot.entity.position; log('  reset', why, p.toString(), 'ground', bot.entity.onGround, [-1,0,1,2].map(dy => bot.blockAt(p.offset(0,dy,0))?.name + '/' + bot.blockAt(p.offset(0,dy,1))?.name).join(' '), 'ctrl', JSON.stringify(bot.controlState)); };
 bot.on('path_update', onPath);
 bot.on('path_reset', onReset);
-try {
-  await withTimeout(bot.pathfinder.goto(new goals.GoalNear(x0 + 10, y0, z0 + 22, 2)), 90000, () => bot.pathfinder.stop());
-} catch (e) {
-  log('walk failed:', e.message);
-}
+const walkRes = await walkTo(bot, new goals.GoalNear(x0 + 10, y0, z0 + 22, 2), { timeout: 90000, retries: 10 });
+if (!walkRes.ok) log('walk failed:', walkRes.error);
 bot.off('path_update', onPath);
 bot.off('path_reset', onReset);
 const walkSec = (Date.now() - t0) / 1000;
@@ -490,7 +541,11 @@ log(`arrived after ${walkSec.toFixed(1)} s at ${bot.entity.position.floored()}`)
 
 const t1 = Date.now();
 let i = 0;
-for (const b of list) {
+for (const b of list) pending.add(b.pos.toString());
+for (const [k, b] of list.entries()) {
+  pending.delete(b.pos.toString());
+  upcoming = list.slice(k, k + 40).map((q) => q.pos);
+  topY = Math.max(topY, b.pos.y);
   if (b.t.name === 'air') continue;
   try {
     if (MODE === 'hybrid') await placeHybrid(b);
@@ -534,6 +589,7 @@ const res = {
   handCorrectPct: +((100 * (stats.hand + stats.handFixed)) / list.length).toFixed(1),
   alreadyPct: +((100 * stats.already) / list.length).toFixed(1),
   finalMatchPct: +((100 * ok) / list.length).toFixed(1), finalWrong: wrong, yawRule, failures,
+  stuckRecoveries: bot.walkStuckCount ?? 0, timing,
   cpuSec: +((cpu.user + cpu.system) / 1e6).toFixed(1), rssMB: Math.round(process.memoryUsage().rss / 1e6),
 };
 console.log('RESULT ' + JSON.stringify(res, null, 1));

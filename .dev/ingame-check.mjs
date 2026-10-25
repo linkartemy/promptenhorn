@@ -56,15 +56,27 @@ for (const type of types) {
         const r = await cmd(`execute if block ${x0 + b.x} ${Y + b.y} ${z0 + b.z} ${name}`);
         if (!/passed/i.test(r) && !(name === 'minecraft:water' && /passed/i.test(await cmd(`execute if block ${x0 + b.x} ${Y + b.y} ${z0 + b.z} ice`)))) popped.push(`${b.block.slice(0, 80)} @${b.x},${b.y},${b.z}`);
       }
-      const line = `${type} seed ${s} turns ${turns}: ${list.length} blocks, ${failedSet.length} setblock errors, ${popped.length} missing`;
+      // Connection states (standard 1.4): the emitted state must be what the game shows, and re-placing the bare
+      // block (which recomputes connections from the neighbours, like a player placing it) must change nothing.
+      const badConn = [];
+      for (const b of list) {
+        const name = b.block.replace(/[[{].*$/, '');
+        if (!/glass_pane|_bars|_fence$|_wall$/.test(name) || /wall_(sign|banner|hanging)/.test(name)) continue;
+        const full = b.block.replace(/\{.*$/, '');
+        if (/north=/.test(full) && !/passed/i.test(await cmd(`execute if block ${x0 + b.x} ${Y + b.y} ${z0 + b.z} ${full}`))) badConn.push(`emitted≠actual ${full.slice(10, 90)} @${b.x},${b.y},${b.z}`);
+        const r = await cmd(`setblock ${x0 + b.x} ${Y + b.y} ${z0 + b.z} ${name}`);
+        if (!/Could not set/i.test(r)) badConn.push(`not vanilla-stable ${name} @${b.x},${b.y},${b.z}: ${r.trim().slice(0, 60)}`);
+      }
+      const line = `${type} seed ${s} turns ${turns}: ${list.length} blocks, ${failedSet.length} setblock errors, ${popped.length} missing, ${badConn.length} connection mismatches`;
       console.log(line);
       for (const f of failedSet.slice(0, 8)) console.log('   set! ' + f);
       for (const p of popped.slice(0, 12)) console.log('   gone ' + p);
-      report.push({ type, s, turns, n: list.length, failedSet, popped });
+      for (const p of badConn.slice(0, 8)) console.log('   conn ' + p);
+      report.push({ type, s, turns, n: list.length, failedSet, popped, badConn });
     }
   }
 }
-const bad = report.filter((r) => r.failedSet.length || r.popped.length);
+const bad = report.filter((r) => r.failedSet.length || r.popped.length || r.badConn.length);
 console.log(`\n${report.length} builds, ${bad.length} with problems`);
 rcon.close?.();
 process.exit(0);

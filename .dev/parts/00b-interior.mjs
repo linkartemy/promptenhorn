@@ -120,12 +120,14 @@ function furnish(bp, rng, r, kind, keep = [], wood = 'spruce', o = {}) {
       if (b && /_door\b|fence_gate/.test(b)) for (const [dx, dz] of Object.values(DIR)) if (inRoom(x + dx, z + dz)) entries.push([x + dx, z + dz]);
       if (!b && walk(x, z) && bp.get(x, y - 1, z)) for (const [dx, dz] of Object.values(DIR)) if (inRoom(x + dx, z + dz)) entries.push([x + dx, z + dz]);
     }
+  // Only entries that are walkable to begin with (a ladder or stove on a keep cell is not a way in).
+  for (let i = entries.length - 1; i >= 0; i--) if (!walk(...entries[i])) entries.splice(i, 1);
   const connected = () => {
     const free = [];
     for (let x = x1; x <= x2; x++) for (let z = z1; z <= z2; z++) if (walk(x, z)) free.push(`${x},${z}`);
     if (!free.length) return true;
     const fs = new Set(free);
-    const roots = entries.map(([x, z]) => `${x},${z}`).filter((k) => fs.has(k));
+    const roots = [...new Set(entries.map(([x, z]) => `${x},${z}`))].filter((k) => fs.has(k));
     if (entries.length && roots.length < new Set(entries.map(([x, z]) => `${x},${z}`)).size) return false;
     const seen = new Set([roots.length ? roots[0] : free[0]]);
     const q = [...seen];
@@ -228,6 +230,15 @@ function furnish(bp, rng, r, kind, keep = [], wood = 'spruce', o = {}) {
       if (tryPlace([[cx + DIR[f][0], y, cz + DIR[f][1], `${wood}_stairs[facing=${f},half=bottom]`]])) o.marks?.push(['seat', cx + DIR[f][0], y, cz + DIR[f][1], { facing: OPP[f] }]);
     }
   }
+  // A blank stretch of wall for a painting.
+  if (['stube', 'living', 'lobby', 'bedroom', 'twin', 'guest', 'common', 'office'].includes(kind))
+    for (const [x, z, f] of shuffled) {
+      const wall = bp.get(x - DIR[f][0], y + 1, z - DIR[f][1]);
+      if (!bp.get(x, y + 1, z) && wall && !/glass|pane|door|ladder/.test(wall) && !keepSet.has(`${x},${z}`)) {
+        bp.mark('painting_spot', x, y + 1, z, { facing: f });
+        break;
+      }
+    }
   // Rug.
   if (['bedroom', 'twin', 'living', 'lobby', 'guest'].includes(kind)) {
     const rug = kind === 'lobby' ? 'red_carpet' : rng.pick(['red_carpet', 'white_carpet', 'light_gray_carpet', 'brown_carpet', 'green_carpet']);

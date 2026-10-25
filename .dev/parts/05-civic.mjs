@@ -16,6 +16,7 @@ function astroClock(bp, x, y, z, face) {
       else b = 'blue_concrete';
       bp.set(x + ax * i, y + j, z + az * i, b);
     }
+  bp.mark('clock_spot', x, y, z, { facing: face });
 }
 
 export function clocktower(rng) {
@@ -346,6 +347,7 @@ export function farmhouse(rng) {
   bp.set(14, 2, 3, 'hay_block[axis=z]');
   bp.set(15, 1, 9, 'water_cauldron[level=3]');
   bp.set(14, 1, 9, 'water_cauldron[level=3]');
+  bp.mark('pasture', 14, 1, 6, { data: { w: 2, d: 10 } });
   sprinkleFlowers(bp, rng, 14, 2, 15, 11, 0.3, ['dandelion', 'oxeye_daisy', 'short_grass', 'short_grass', 'azure_bluet']);
   bp.fill(13, 0, 13, 15, 0, 15, 'cobblestone');
   bp.set(14, -1, 14, 'cobblestone');

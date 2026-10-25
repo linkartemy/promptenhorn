@@ -37,9 +37,15 @@ export class Generators {
     this.modules = new Map(); // version -> Promise<{ B, rngFrom }>
   }
 
-  /** Loads the current version and makes sure it is archived. Call once at startup. */
+  /**
+   * Loads the current version and makes sure it is archived. Call once at startup.
+   * The two source files are read once; that exact content is hashed, archived and then imported from
+   * the archive, so the version id always names the code that is really running even if someone edits
+   * the generators while the bridge starts.
+   */
   async init() {
-    this.current = versionOf(this.sourceDir);
+    const bytes = FILES.map((f) => fs.readFileSync(path.join(this.sourceDir, f)));
+    this.current = crypto.createHash('sha256').update(bytes[0]).update('\0').update(bytes[1]).digest('hex').slice(0, 12);
     fs.mkdirSync(this.archiveDir, { recursive: true });
     for (const name of fs.readdirSync(this.archiveDir)) {
       const dir = path.join(this.archiveDir, name);
@@ -51,7 +57,7 @@ export class Generators {
     if (!this.dirs.has(this.current) && this.archive) {
       const dir = path.join(this.archiveDir, this.current);
       fs.mkdirSync(dir, { recursive: true });
-      for (const f of FILES) fs.copyFileSync(path.join(this.sourceDir, f), path.join(dir, f));
+      FILES.forEach((f, i) => fs.writeFileSync(path.join(dir, f), bytes[i]));
       this.dirs.set(this.current, dir);
       this.log(`Archived generator version ${this.current} in ${dir}`);
     }
@@ -65,9 +71,8 @@ export class Generators {
         this.log(`archive/legacy.txt points to ${dir}, which is not a generator snapshot (${err.message})`);
       }
     }
-    // The current version always comes from the source directory itself (not the archived copy), so the
-    // bridge and the city layout code share one module instance.
-    this.modules.set(this.current, this.#import(this.sourceDir));
+    // Run the archived copy (identical bytes); tools that do not archive import the source directly.
+    this.modules.set(this.current, this.#import(this.dirs.get(this.current) ?? this.sourceDir));
     this.currentModule = await this.modules.get(this.current);
     return this.currentModule;
   }

@@ -35,3 +35,4 @@ server/plugins/
 # Local city state copies (contain chat names)
 .dev/*state*.json
 .dev/old/
+backups/

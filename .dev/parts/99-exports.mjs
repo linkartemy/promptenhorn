@@ -1,7 +1,9 @@
 
 // ================================================================ registry
 
-export const BUILDINGS = { chalet, townhouse, cafe, church, clocktower, hotel, modern, apartment, farmhouse, hut };
+const RAW = { chalet, townhouse, cafe, church, clocktower, hotel, modern, apartment, farmhouse, hut };
+/** type -> (rng, options) => Blueprint, with the shared semantic markers (doors, seats, beds, ...) added. */
+export const BUILDINGS = Object.fromEntries(Object.entries(RAW).map(([type, gen]) => [type, (rng, options) => autoMarks(gen(rng, options), type)]));
 
 /**
  * Building catalogue for the bridge. zones: relative weights per ring around the city centre
@@ -22,7 +24,6 @@ export const CATALOG = {
 
 export const LABELS = { ...Object.fromEntries(Object.entries(CATALOG).map(([k, v]) => [k, v.label])), square: 'Главная площадь', plaza: 'Площадь района' };
 
-export function generate(type, seed) {
-  const rng = rngFrom(`${seed}:${type}`);
-  return BUILDINGS[type](rng);
+export function generate(type, seed, options = {}) {
+  return BUILDINGS[type](rngFrom(`${seed}:${type}`), options);
 }

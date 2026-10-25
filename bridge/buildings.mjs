@@ -201,6 +201,7 @@ function win(bp, rng, x, y, z, face, o = {}) {
   const put = (i, j, k, b) => bp.set(...P(i, j, k), b);
   const putIf = (i, j, k, b) => bp.setIfEmpty(...P(i, j, k), b);
   for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) put(i, j, 0, typeof glass === 'function' ? glass(i, j) : glass);
+  bp.mark('light', x - dx, y, z - dz, { facing: face });
   if (frame)
     for (let j = 0; j < h; j++) {
       put(-1, j, 0, frame);
@@ -380,6 +381,57 @@ function planter(bp, x, z, wood = 'spruce', plant = 'flowering_azalea') {
   for (const f of Object.keys(DIR)) bp.setIfEmpty(x + DIR[f][0], 1, z + DIR[f][1], `${wood}_trapdoor[facing=${f},open=true,half=bottom]`);
 }
 
+
+const PROFESSION = { smoker: 'butcher', lectern: 'librarian', loom: 'shepherd', water_cauldron: 'leatherworker', composter: 'farmer', barrel: 'fisherman', cartography_table: 'cartographer', brewing_stand: 'cleric', fletching_table: 'fletcher', grindstone: 'weaponsmith', stonecutter: 'mason', smithing_table: 'toolsmith', blast_furnace: 'armorer' };
+
+/**
+ * Derives the semantic markers every building shares from its finished blocks (generators add special ones
+ * themselves): main door with chronicle lectern / sign / pet spots, seats, beds, workstations, bells.
+ */
+function autoMarks(bp, type) {
+  const has = (k) => bp.markers.some((m) => m.kind === k);
+  const blocks = [...bp.blocks].map(([k, b]) => [...k.split(',').map(Number), b]);
+  const name = (b) => blockName(b);
+  const props = (b) => Object.fromEntries((b.match(/\[([^\]]*)\]/)?.[1] ?? '').split(',').filter(Boolean).map((p) => p.split('=')));
+  const covered = (x, y, z) => { for (let yy = y + 1; yy <= y + 8; yy++) if (bp.get(x, yy, z)) return true; return false; };
+  // Main entrance: the front-most ground-floor door.
+  if (!has('door')) {
+    const doors = blocks.filter(([x, y, z, b]) => /_door\b/.test(b) && /half=lower/.test(b) && y <= 2 && x >= 0 && x <= 16);
+    doors.sort((a, b) => b[2] - a[2] || Math.abs(a[0] - 8) - Math.abs(b[0] - 8));
+    const d = doors[0];
+    if (d) {
+      const [x, y, z, b] = d;
+      const f = props(b).facing;
+      const [dx, dz] = DIR[f];
+      const [ax, az] = along(f);
+      const ox = x + dx, oz = z + dz;
+      bp.mark('door', ox, y, oz, { facing: f });
+      const soft = (b) => !b || /^minecraft:(poppy|dandelion|cornflower|oxeye_daisy|azure_bluet|allium|.*_tulip|lily_of_the_valley|short_grass|fern)$/.test(b);
+      const free = (cx, cz) => soft(bp.get(cx, y, cz)) && !bp.get(cx, y + 1, cz) && cx >= 0 && cx <= 16 && cz >= 0 && cz <= 16;
+      for (const s of [1, -1, 2, -2]) if (free(ox + ax * s, oz + az * s)) { bp.mark('lectern_spot', ox + ax * s, y, oz + az * s, { facing: f }); break; }
+      for (const s of [-1, 1, -2]) if (free(ox + ax * s, oz + az * s)) { bp.mark('pet_spot', ox + ax * s, y, oz + az * s); break; }
+      for (const s of [1, -1]) if (bp.get(x + ax * s, y + 1, z + az * s) && !bp.get(ox + ax * s, y + 1, oz + az * s)) { bp.mark('sign_spot', ox + ax * s, y + 1, oz + az * s, { facing: f }); break; }
+    }
+  }
+  let barrels = 0;
+  for (const [x, y, z, b] of blocks) {
+    const n = name(b);
+    const p = props(b);
+    if (n === 'bell') bp.mark('bell', x, y, z);
+    if (/_bed$/.test(n) && p.part === 'head' && covered(x, y, z)) bp.mark('bed', x, y, z, { facing: p.facing, data: { owner: type === 'hotel' || type === 'hut' ? 'guest' : 'family' } });
+    if (PROFESSION[n] && (n !== 'barrel' || barrels++ < 1)) bp.mark('workstation', x, y, z, { data: { profession: PROFESSION[n] } });
+    // Seats: lone wooden / quartz stairs (chairs, benches, pews), not part of a staircase or a roof.
+    if (/_stairs$/.test(n) && p.half === 'bottom' && /oak|spruce|birch|cherry|mangrove|bamboo|quartz|acacia|jungle|crimson|warped/.test(n) && !bp.get(x, y + 1, z)) {
+      const below = bp.get(x, y - 1, z);
+      const [dx, dz] = DIR[p.facing] ?? [0, 0];
+      const stairLike = (b2) => b2 && /_stairs/.test(b2);
+      if (below && !stairLike(below) && !stairLike(bp.get(x + dx, y + 1, z + dz)) && !stairLike(bp.get(x - dx, y - 1, z - dz)) && y <= 30)
+        bp.mark('seat', x, y, z, { facing: OPP[p.facing] });
+    }
+  }
+  return bp;
+}
+
 // ================================================================ interiors: stairs, ladders, partitions, furniture
 
 const isWalkable = (b) => !b || /carpet|pressure_plate/.test(b);
@@ -501,12 +553,14 @@ function furnish(bp, rng, r, kind, keep = [], wood = 'spruce', o = {}) {
       if (b && /_door\b|fence_gate/.test(b)) for (const [dx, dz] of Object.values(DIR)) if (inRoom(x + dx, z + dz)) entries.push([x + dx, z + dz]);
       if (!b && walk(x, z) && bp.get(x, y - 1, z)) for (const [dx, dz] of Object.values(DIR)) if (inRoom(x + dx, z + dz)) entries.push([x + dx, z + dz]);
     }
+  // Only entries that are walkable to begin with (a ladder or stove on a keep cell is not a way in).
+  for (let i = entries.length - 1; i >= 0; i--) if (!walk(...entries[i])) entries.splice(i, 1);
   const connected = () => {
     const free = [];
     for (let x = x1; x <= x2; x++) for (let z = z1; z <= z2; z++) if (walk(x, z)) free.push(`${x},${z}`);
     if (!free.length) return true;
     const fs = new Set(free);
-    const roots = entries.map(([x, z]) => `${x},${z}`).filter((k) => fs.has(k));
+    const roots = [...new Set(entries.map(([x, z]) => `${x},${z}`))].filter((k) => fs.has(k));
     if (entries.length && roots.length < new Set(entries.map(([x, z]) => `${x},${z}`)).size) return false;
     const seen = new Set([roots.length ? roots[0] : free[0]]);
     const q = [...seen];
@@ -609,6 +663,15 @@ function furnish(bp, rng, r, kind, keep = [], wood = 'spruce', o = {}) {
       if (tryPlace([[cx + DIR[f][0], y, cz + DIR[f][1], `${wood}_stairs[facing=${f},half=bottom]`]])) o.marks?.push(['seat', cx + DIR[f][0], y, cz + DIR[f][1], { facing: OPP[f] }]);
     }
   }
+  // A blank stretch of wall for a painting.
+  if (['stube', 'living', 'lobby', 'bedroom', 'twin', 'guest', 'common', 'office'].includes(kind))
+    for (const [x, z, f] of shuffled) {
+      const wall = bp.get(x - DIR[f][0], y + 1, z - DIR[f][1]);
+      if (!bp.get(x, y + 1, z) && wall && !/glass|pane|door|ladder/.test(wall) && !keepSet.has(`${x},${z}`)) {
+        bp.mark('painting_spot', x, y + 1, z, { facing: f });
+        break;
+      }
+    }
   // Rug.
   if (['bedroom', 'twin', 'living', 'lobby', 'guest'].includes(kind)) {
     const rug = kind === 'lobby' ? 'red_carpet' : rng.pick(['red_carpet', 'white_carpet', 'light_gray_carpet', 'brown_carpet', 'green_carpet']);
@@ -705,7 +768,7 @@ export function chalet(rng) {
     for (const [a, b] of groups)
       for (const sgn of [-1, 1]) win(bp, rng, sgn > 0 ? cx + a : cx - b, yb + 1, z2, 'south', { w: b - a + 1, h: 2, shutters: shutter });
     bp.door(cx, yb + 1, z2, tw.door, 'south');
-    for (const x of [cx - 3, cx + 2]) win(bp, rng, x, yb + 1, z1, 'north', { w: 2, h: 2, shutters: shutter, box: trimW.trapdoor });
+    win(bp, rng, cx + 2, yb + 1, z1, 'north', { w: 2, h: 2, shutters: shutter, box: trimW.trapdoor });
   }
   for (const z of sideZ) {
     win(bp, rng, x1, 2, z, 'west', { h: 2, shutters: shutter });
@@ -1208,6 +1271,7 @@ function clockFace(bp, x, y, z, face, big = false) {
       else if (i === sgn && j === 0) b = big ? 'yellow_concrete' : 'black_concrete';
       if (b) bp.set(x + ax * i, y + j, z + az * i, b);
     }
+  bp.mark('clock_spot', x, y, z, { facing: face });
 }
 
 /** Square tower with belfry, clock faces and a spire. Returns the top y of the walls. */
@@ -1809,6 +1873,7 @@ function astroClock(bp, x, y, z, face) {
       else b = 'blue_concrete';
       bp.set(x + ax * i, y + j, z + az * i, b);
     }
+  bp.mark('clock_spot', x, y, z, { facing: face });
 }
 
 export function clocktower(rng) {
@@ -2139,6 +2204,7 @@ export function farmhouse(rng) {
   bp.set(14, 2, 3, 'hay_block[axis=z]');
   bp.set(15, 1, 9, 'water_cauldron[level=3]');
   bp.set(14, 1, 9, 'water_cauldron[level=3]');
+  bp.mark('pasture', 14, 1, 6, { data: { w: 2, d: 10 } });
   sprinkleFlowers(bp, rng, 14, 2, 15, 11, 0.3, ['dandelion', 'oxeye_daisy', 'short_grass', 'short_grass', 'azure_bluet']);
   bp.fill(13, 0, 13, 15, 0, 15, 'cobblestone');
   bp.set(14, -1, 14, 'cobblestone');
@@ -2270,6 +2336,10 @@ function marketStall(bp, rng, x0, z0, face) {
 }
 
 export function square(rng) {
+  return autoMarks(squareBlocks(rng), 'square');
+}
+
+function squareBlocks(rng) {
   const bp = new Blueprint();
   const c = 8;
   const r = (x, z) => Math.hypot(x - c, z - c);
@@ -2322,6 +2392,9 @@ export function square(rng) {
   marketStall(bp, rng, -1, 4, 'east');
   marketStall(bp, rng, 15, 10, 'west');
   flagPole(bp, c, -1, 8);
+  // Town bell on a pedestal at the south edge: the meeting point.
+  bp.set(c, 1, 17, 'chiseled_stone_bricks');
+  bp.set(c, 2, 17, 'bell[attachment=floor,facing=south]');
   const [b1, d1] = rng.pick(CANTONS);
   const [b2, d2] = rng.pick(CANTONS);
   flagPole(bp, c - 3, -1, 6, `${b1}_banner[rotation=0]${d1}`);
@@ -2332,6 +2405,10 @@ export function square(rng) {
 // ================================================================ district plaza (cosy village square)
 
 export function plaza(rng) {
+  return autoMarks(plazaBlocks(rng), 'plaza');
+}
+
+function plazaBlocks(rng) {
   const bp = new Blueprint();
   const c = 8;
   const cob = () => rng.weighted([['cobblestone', 3], ['mossy_cobblestone', 1], ['stone_bricks', 1], ['andesite', 0.6]]);
@@ -2359,12 +2436,14 @@ export function plaza(rng) {
   broadTree(bp, tx, tz, 5, 3, 'oak', -2, 18);
   for (const f of Object.keys(DIR)) bp.set(tx + DIR[f][0], 1, tz + DIR[f][1], `spruce_stairs[facing=${OPP[f]},half=bottom]`);
   for (const [dx, dz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) bp.set(tx + dx, 1, tz + dz, 'spruce_slab[type=bottom]');
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) bp.set(tx + dx, 0, tz + dz, 'rooted_dirt');
   // Benches, lamps, flag.
   bench(bp, c - 1, 13, 'south', 3, 'spruce');
   lamp(bp, 4, 12, 3);
   lamp(bp, 12, 12, 3);
   flagPole(bp, 16 - tx, 2, 7);
   // Notice board.
+  bp.fill(11, 0, 15, 15, 0, 16, 'cobblestone');
   bp.fill(12, 1, 15, 12, 3, 15, 'spruce_log[axis=y]');
   bp.fill(14, 1, 15, 14, 3, 15, 'spruce_log[axis=y]');
   bp.fill(13, 2, 15, 13, 3, 15, 'spruce_planks');
@@ -2372,6 +2451,7 @@ export function plaza(rng) {
     bp.set(x, 4, 15, 'spruce_slab[type=bottom]');
     bp.set(x, 4, 16, 'spruce_stairs[facing=north,half=bottom]');
   }
+  bp.set(11, 3, 15, 'bell[attachment=ceiling,facing=south]');
   const notes = [['GEMEINDE', 'Markt: Samstag', '8 - 12 Uhr', ''], ['Turnverein', 'Schwingfest', 'Sonntag 14 Uhr', ''], ['Chor', 'Probe Mittwoch', '', ''], ['Velo', 'zu verkaufen', '', '']];
   bp.set(12, 2, 16, `spruce_wall_sign[facing=south]${signData(rng.pick(notes))}`);
   bp.set(13, 3, 16, `spruce_wall_sign[facing=south]${signData(notes[0])}`);
@@ -2389,7 +2469,9 @@ export function plaza(rng) {
 
 // ================================================================ registry
 
-export const BUILDINGS = { chalet, townhouse, cafe, church, clocktower, hotel, modern, apartment, farmhouse, hut };
+const RAW = { chalet, townhouse, cafe, church, clocktower, hotel, modern, apartment, farmhouse, hut };
+/** type -> (rng, options) => Blueprint, with the shared semantic markers (doors, seats, beds, ...) added. */
+export const BUILDINGS = Object.fromEntries(Object.entries(RAW).map(([type, gen]) => [type, (rng, options) => autoMarks(gen(rng, options), type)]));
 
 /**
  * Building catalogue for the bridge. zones: relative weights per ring around the city centre
@@ -2410,7 +2492,6 @@ export const CATALOG = {
 
 export const LABELS = { ...Object.fromEntries(Object.entries(CATALOG).map(([k, v]) => [k, v.label])), square: 'Главная площадь', plaza: 'Площадь района' };
 
-export function generate(type, seed) {
-  const rng = rngFrom(`${seed}:${type}`);
-  return BUILDINGS[type](rng);
+export function generate(type, seed, options = {}) {
+  return BUILDINGS[type](rngFrom(`${seed}:${type}`), options);
 }

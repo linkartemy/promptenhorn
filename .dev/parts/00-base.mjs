@@ -201,6 +201,7 @@ function win(bp, rng, x, y, z, face, o = {}) {
   const put = (i, j, k, b) => bp.set(...P(i, j, k), b);
   const putIf = (i, j, k, b) => bp.setIfEmpty(...P(i, j, k), b);
   for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) put(i, j, 0, typeof glass === 'function' ? glass(i, j) : glass);
+  bp.mark('light', x - dx, y, z - dz, { facing: face });
   if (frame)
     for (let j = 0; j < h; j++) {
       put(-1, j, 0, frame);
@@ -380,3 +381,53 @@ function planter(bp, x, z, wood = 'spruce', plant = 'flowering_azalea') {
   for (const f of Object.keys(DIR)) bp.setIfEmpty(x + DIR[f][0], 1, z + DIR[f][1], `${wood}_trapdoor[facing=${f},open=true,half=bottom]`);
 }
 
+
+const PROFESSION = { smoker: 'butcher', lectern: 'librarian', loom: 'shepherd', water_cauldron: 'leatherworker', composter: 'farmer', barrel: 'fisherman', cartography_table: 'cartographer', brewing_stand: 'cleric', fletching_table: 'fletcher', grindstone: 'weaponsmith', stonecutter: 'mason', smithing_table: 'toolsmith', blast_furnace: 'armorer' };
+
+/**
+ * Derives the semantic markers every building shares from its finished blocks (generators add special ones
+ * themselves): main door with chronicle lectern / sign / pet spots, seats, beds, workstations, bells.
+ */
+function autoMarks(bp, type) {
+  const has = (k) => bp.markers.some((m) => m.kind === k);
+  const blocks = [...bp.blocks].map(([k, b]) => [...k.split(',').map(Number), b]);
+  const name = (b) => blockName(b);
+  const props = (b) => Object.fromEntries((b.match(/\[([^\]]*)\]/)?.[1] ?? '').split(',').filter(Boolean).map((p) => p.split('=')));
+  const covered = (x, y, z) => { for (let yy = y + 1; yy <= y + 8; yy++) if (bp.get(x, yy, z)) return true; return false; };
+  // Main entrance: the front-most ground-floor door.
+  if (!has('door')) {
+    const doors = blocks.filter(([x, y, z, b]) => /_door\b/.test(b) && /half=lower/.test(b) && y <= 2 && x >= 0 && x <= 16);
+    doors.sort((a, b) => b[2] - a[2] || Math.abs(a[0] - 8) - Math.abs(b[0] - 8));
+    const d = doors[0];
+    if (d) {
+      const [x, y, z, b] = d;
+      const f = props(b).facing;
+      const [dx, dz] = DIR[f];
+      const [ax, az] = along(f);
+      const ox = x + dx, oz = z + dz;
+      bp.mark('door', ox, y, oz, { facing: f });
+      const soft = (b) => !b || /^minecraft:(poppy|dandelion|cornflower|oxeye_daisy|azure_bluet|allium|.*_tulip|lily_of_the_valley|short_grass|fern)$/.test(b);
+      const free = (cx, cz) => soft(bp.get(cx, y, cz)) && !bp.get(cx, y + 1, cz) && cx >= 0 && cx <= 16 && cz >= 0 && cz <= 16;
+      for (const s of [1, -1, 2, -2]) if (free(ox + ax * s, oz + az * s)) { bp.mark('lectern_spot', ox + ax * s, y, oz + az * s, { facing: f }); break; }
+      for (const s of [-1, 1, -2]) if (free(ox + ax * s, oz + az * s)) { bp.mark('pet_spot', ox + ax * s, y, oz + az * s); break; }
+      for (const s of [1, -1]) if (bp.get(x + ax * s, y + 1, z + az * s) && !bp.get(ox + ax * s, y + 1, oz + az * s)) { bp.mark('sign_spot', ox + ax * s, y + 1, oz + az * s, { facing: f }); break; }
+    }
+  }
+  let barrels = 0;
+  for (const [x, y, z, b] of blocks) {
+    const n = name(b);
+    const p = props(b);
+    if (n === 'bell') bp.mark('bell', x, y, z);
+    if (/_bed$/.test(n) && p.part === 'head' && covered(x, y, z)) bp.mark('bed', x, y, z, { facing: p.facing, data: { owner: type === 'hotel' || type === 'hut' ? 'guest' : 'family' } });
+    if (PROFESSION[n] && (n !== 'barrel' || barrels++ < 1)) bp.mark('workstation', x, y, z, { data: { profession: PROFESSION[n] } });
+    // Seats: lone wooden / quartz stairs (chairs, benches, pews), not part of a staircase or a roof.
+    if (/_stairs$/.test(n) && p.half === 'bottom' && /oak|spruce|birch|cherry|mangrove|bamboo|quartz|acacia|jungle|crimson|warped/.test(n) && !bp.get(x, y + 1, z)) {
+      const below = bp.get(x, y - 1, z);
+      const [dx, dz] = DIR[p.facing] ?? [0, 0];
+      const stairLike = (b2) => b2 && /_stairs/.test(b2);
+      if (below && !stairLike(below) && !stairLike(bp.get(x + dx, y + 1, z + dz)) && !stairLike(bp.get(x - dx, y - 1, z - dz)) && y <= 30)
+        bp.mark('seat', x, y, z, { facing: OPP[p.facing] });
+    }
+  }
+  return bp;
+}

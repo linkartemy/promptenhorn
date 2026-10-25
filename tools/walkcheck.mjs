@@ -201,11 +201,13 @@ export function analyse(list, { turns = 0, size = 21, spec = {} } = {}) {
   res.door = list.some((b) => /_door\b/.test(b.block) && b.y <= 2 && /half=lower/.test(b.block) && reach.has(`${b.x},${b.y},${b.z}`));
   // Household markers (3.x) per level band.
   const at = (y1, y2, re) => list.filter((b) => b.y >= y1 && b.y <= y2 && re.test(b.block) && plotCell(b.x, b.z));
-  const levelInfo = res.levels.map((lv) => {
+  const cellsOf = (y) => levels.get(y) ?? [];
+  const levelInfo = res.levels.map((lv, i) => {
     const top = lv.y + Math.max(2, Math.min(lv.mode, 4)) - 1;
+    const roofTop = (res.levels[i + 1]?.y ?? lv.y + 12) - 1;
     return {
       y: lv.y,
-      light: at(lv.y, top + 1, LIGHT).length > 0,
+      light: list.some((b) => b.y >= lv.y && b.y <= lv.y + 8 && LIGHT.test(b.block) && cellsOf(lv.y).some(([x, z]) => Math.abs(x - b.x) <= 1 && Math.abs(z - b.z) <= 1)),
       window: at(lv.y, top, /glass/).length > 0,
       kitchen: at(lv.y, top, /smoker|furnace|campfire/).length > 0 && at(lv.y, top, /water_cauldron/).length > 0,
       bed: at(lv.y, top, /_bed\[.*part=head/).length > 0,

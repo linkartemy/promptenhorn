@@ -1213,9 +1213,10 @@ const renovator = new Renovator({
   streetOps: streetCommands,
   clearOps: clearCommands,
   enabled: () => settings.on('renovation') && !!state.city && !state.city.pending,
-  // An idle (awake) builder of the district walks over and helps; otherwise the crew works while any chat does.
+  // An idle (awake) builder of the district walks over and helps (any district's for the main square);
+  // otherwise the crew works while any chat does.
   helper: (district) =>
-    (district && Object.values(state.sessions).find((s) => !s.retired && !s.active && s.at && s.districtKey === district.key && (s.pose === 'idle-standing' || s.pose === 'renovating') && Date.now() - s.lastEvent < config.sleepAfterMinutes * 60000)) || null,
+    Object.values(state.sessions).find((s) => !s.retired && !s.active && s.at && (!district || s.districtKey === district.key) && (s.pose === 'idle-standing' || s.pose === 'renovating') && Date.now() - s.lastEvent < config.sleepAfterMinutes * 60000) ?? null,
   rate: (district, helper) => (Object.values(state.sessions).some((s) => s.active && !s.retired) ? config.renovateBlocksPerSecond : 0) + (helper ? config.renovateHelperBlocksPerSecond : 0),
   announce,
 });

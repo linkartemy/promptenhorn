@@ -1,0 +1,11 @@
+{
+  "port": 7778,
+  "serverDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-server",
+  "stateFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/live-state-test.json",
+  "heartbeatFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-heartbeat",
+  "archiveDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-archive-live",
+  "renovateBlocksPerSecond": 40,
+  "renovateHelperBlocksPerSecond": 40,
+  "maxRenovatePerTick": 30,
+  "resetForceloadsOnStart": true
+}

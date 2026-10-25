@@ -8,8 +8,11 @@
   "maxBlocksPerTick": 30,
   "resetForceloadsOnStart": true,
   "searchOrigin": [
-    24000,
-    -24000
+    28000,
+    -28000
   ],
-  "preset": "basic"
+  "preset": "basic",
+  "renovateHelperBlocksPerSecond": 40,
+  "renovateBlocksPerSecond": 40,
+  "maxRenovatePerTick": 30
 }

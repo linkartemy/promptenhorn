@@ -251,7 +251,7 @@ export class Terrain {
    * Levels a plot to height y and blends it into the surroundings with grassy 1:1 terraces
    * (cut slopes above, embankments below) instead of vertical walls. Existing plots are never touched.
    */
-  async preparePlot(r, y, { obstacles, street, margin = 8, top = y }) {
+  async preparePlot(r, y, { obstacles, street, margin = 4, top = y }) {
     const { cmd } = this;
     // Cut everything up to the highest ground nearby (plus headroom), in slabs that respect fill's 32768 limit.
     const ceiling = Math.max(y + 40, top + 8);
@@ -271,8 +271,8 @@ export class Terrain {
       for (const s of subtract(ring(r, d), obstacles)) {
         await clearAir(s, y + d + 1);
         await cmd(`fill ${s.x1} ${y + d} ${s.z1} ${s.x2} ${y + d} ${s.z2} grass_block replace #minecraft:dirt`);
-        await cmd(`fill ${s.x1} ${y - d - 12} ${s.z1} ${s.x2} ${y - d - 1} ${s.z2} dirt replace #minecraft:replaceable`);
-        await cmd(`fill ${s.x1} ${y - d} ${s.z1} ${s.x2} ${y - d} ${s.z2} grass_block replace #minecraft:replaceable`);
+        await cmd(`fill ${s.x1} ${y - d - 12} ${s.z1} ${s.x2} ${y - d - 1} ${s.z2} dirt replace minecraft:air`); // air only: lakes, rivers and the sea are never filled
+        await cmd(`fill ${s.x1} ${y - d} ${s.z1} ${s.x2} ${y - d} ${s.z2} grass_block replace minecraft:air`);
       }
     }
 

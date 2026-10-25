@@ -17,6 +17,7 @@ function clockFace(bp, x, y, z, face, big = false) {
       else if (i === sgn && j === 0) b = big ? 'yellow_concrete' : 'black_concrete';
       if (b) bp.set(x + ax * i, y + j, z + az * i, b);
     }
+  bp.mark('clock_spot', x, y, z, { facing: face });
 }
 
 /** Square tower with belfry, clock faces and a spire. Returns the top y of the walls. */

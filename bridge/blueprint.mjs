@@ -103,7 +103,7 @@ const CONNECT_EXCEPTION = /leaves$|^barrier$|pumpkin$|^melon$|jack_o_lantern|shu
 const NOT_STURDY = new RegExp([
   '_slab$', 'fence', '_wall$', 'glass_pane$', '_bars$', '_door$', 'sign$', 'banner$', 'carpet$', 'pressure_plate$', '_bed$', 'chest$',
   'lantern$', '^potted_', '^flower_pot$', 'candle', 'cake$', 'campfire$', 'daylight_detector$', 'lectern$', 'hopper$', 'bell$', '_rod$',
-  'chain$', 'button$', 'torch', 'ladder$', '_shelf$', 'statue$', 'decorated_pot$', '^azalea$', '^flowering_azalea$', 'grindstone$',
+  'chain$', 'button$', 'torch', 'ladder$', '_shelf$', 'cauldron$', 'statue$', 'decorated_pot$', '^azalea$', '^flowering_azalea$', 'grindstone$',
   'brewing_stand$', 'enchanting_table$', 'anvil$', 'scaffolding$', '^snow$', '^water$', '^lava$', 'rail$', 'lily_pad$', 'leaves$',
   '^(poppy|dandelion|cornflower|oxeye_daisy|azure_bluet|allium|blue_orchid|.*_tulip|lily_of_the_valley|fern|short_grass|tall_grass|large_fern|torchflower|rose_bush|lilac|peony|sunflower|bush|firefly_bush|sweet_berry_bush|wheat|carrots|potatoes|beetroots|pink_petals|wildflowers|leaf_litter)$',
 ].join('|'));
@@ -157,6 +157,28 @@ const ns = (b) => (/^[a-z0-9_.-]+:/.test(b) ? b : `minecraft:${b}`);
 export class Blueprint {
   constructor() {
     this.blocks = new Map();
+    this.markers = [];
+  }
+
+  /** Semantic point for the bridge (seat, bed, door, light, bell, ...). Not part of the block list or its hash. */
+  mark(kind, x, y, z, { facing, data } = {}) {
+    this.markers.push({ kind, x, y, z, ...(facing ? { facing } : {}), ...(data ? { data } : {}) });
+  }
+
+  /** Markers mapped like toBuildList: offset, rotation (facing turns with the blocks), optional clipping. */
+  toMarkerList({ turns = 0, size, offset = 0, clipMin = -Infinity, clipMax = Infinity }) {
+    const t = ((turns % 4) + 4) % 4;
+    const out = [];
+    for (const m of this.markers) {
+      let x = m.x + offset;
+      let z = m.z + offset;
+      if (x < clipMin || z < clipMin || x > clipMax || z > clipMax) continue;
+      for (let i = 0; i < t; i++) [x, z] = [size - 1 - z, x];
+      let facing = m.facing;
+      if (facing) for (let i = 0; i < t; i++) facing = CW_FACING[facing] ?? facing;
+      out.push({ ...m, x, z, ...(facing ? { facing } : {}) });
+    }
+    return out;
   }
 
   set(x, y, z, block) {
@@ -182,6 +204,7 @@ export class Blueprint {
       next.set(`${axis - x},${y},${z}`, mirrorBlock(block));
     }
     this.blocks = next;
+    this.markers = this.markers.map((m) => ({ ...m, x: axis - m.x, ...(m.facing ? { facing: MIRROR_X[m.facing] ?? m.facing } : {}) }));
     return this;
   }
 
