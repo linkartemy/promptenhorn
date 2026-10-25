@@ -243,3 +243,9 @@ Shore types expect the water on their **local north** (the back): the bridge sho
 ## 9. Small forms from the generators
 
 `YARD_FORMS` lists the stage-3 yard items with their size, and `yardForm(kind, seed, wood)` returns one on its own (`{ bp, w, d, h }`, blocks at x 0..w−1, z 0..d−1, front towards +z): `fountain` (village fountain with a two-basin trough), `bees` (bee house), `greenhouse` (5×4, door, crop beds, lantern), `pergola` (3×3 with a climbing plant over a garden table, `food_spot`), `flag`, `beds` (raised vegetable beds with composter), `woodpile`, `outhouse`, `bench`. The economy may place them as small forms in parks and yards; `bridge/smallforms.mjs` (life agent) is untouched.
+
+### 7.5 Wired by the bridge (terrain, after the architect's 7.0)
+
+- `options.terrain` now carries `turns` (`{ ...plot.terrain, turns: plot.turns }`), so `localSide(aspect, turns)` gives the real downhill side. Plots of `TERRAIN_VARIANTS` types in a declared mode get no bridge cellar.
+- `plot.terrain.waterSide` (world side facing open water, or null). On such lots `pickType` also offers `kind: 'shore'` types with weight `zones.shore` (never elsewhere), and a shore type's plot is turned so the water is on its local north (`turns = ['N','E','S','W'].indexOf(waterSide)`).
+- The lighthouse on the breakwater head is still the bridge's own (bridge/infra.mjs); placing `BUILDINGS.lighthouse` there would need the breakwater head as a 21×21 lot — not done.

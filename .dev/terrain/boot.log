@@ -1,0 +1,38 @@
+20:33:14 Generator version 9e68737916e2
+20:33:14 Preset basic: callout, status, toolInHand, tests, commits, pr, apprentices, windows, chimney, chronicle, economy, renovation, adaptive-terrain, waterfront, river-bridges, shore-renovation, professions, alphorn, townRank
+20:33:14 Promptenhorn bridge listening on http://127.0.0.1:7782  (settings: http://127.0.0.1:7782/)
+20:33:15 Connected to Minecraft server via RCON
+20:33:16 Shore renovation 36: quay at cell 0,-2 (68 blocks)
+20:33:16 Shore renovation 37: quay at cell 0,-2 (68 blocks)
+20:33:16 Shore renovation 38: quay at cell 3,1 (82 blocks)
+20:33:16 Shore renovation 39: pier at cell 4,1 (104 blocks)
+20:33:16 Shore renovation 40: quay at cell 3,0 (88 blocks)
+20:33:16 Shore renovation 41: quay at cell 3,0 (88 blocks)
+20:33:16 Shore renovation 42: quay at cell 3,2 (88 blocks)
+20:33:16 Shore renovation 43: quay at cell 3,2 (88 blocks)
+20:33:16 Shore renovation: 8 pieces planned
+20:33:20 Infra 34 (lane) finished
+20:33:21 Finished boathouse at 3,7 (stage 2)
+20:33:21 Plot 3,7: stage 3 is the same building, nothing to add
+20:33:22 Plot 2,8: level at y=66 (drop 2, cut 244, fill 65, wall 0, posts 0, deck 0; 172 commands)
+20:33:22 Plot 2,8 (rural): park (public), 345 blocks, y=66
+20:33:23 Infra 35 (viewpoint) finished
+20:33:24 Finished park at 2,8
+20:33:24 Infra 36 (quay) finished
+20:33:25 Infra 37 (quay) finished
+20:33:26 Surveying 48 points for nearby peaks…
+20:33:26 Infra 38 (quay) finished
+20:33:28 Infra 39 (pier) finished
+20:33:30 Finished farmhouse at -2,7 (stage 2)
+20:33:30 Infra 40 (quay) finished
+20:33:30 Plot -2,7: stage 2 -> 3: removed 0, 890 already right, 14 to place
+20:33:30 Finished farmhouse at -2,7 (stage 3)
+20:33:31 Infra 41 (quay) finished
+20:33:32 Finished townhouse at -5,4 (stage 2)
+20:33:32 Plot -5,4: stage 2 -> 3: removed 0, 1548 already right, 7 to place
+20:33:32 Finished townhouse at -5,4 (stage 3)
+20:33:33 Infra 42 (quay) finished
+20:33:34 Infra 43 (quay) finished
+20:33:36 Infra 1 (quay) finished
+20:33:38 Infra 2 (pier) finished
+20:33:38 Infra 3 (quay) finished

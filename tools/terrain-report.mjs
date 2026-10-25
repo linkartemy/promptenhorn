@@ -17,10 +17,17 @@
 //   --server-dir DIR      server root (world + RCON settings from server.properties)
 //   --rcon-port P         run `save-all flush` over RCON first (127.0.0.1); --rcon-password PW
 //   --bench               scan twice and report the cached re-scan time
+//   --migrate             with --state: dry run of the shore renovation (bridge/infra.mjs) for that city — which
+//                         quays, jetties and which harbour would be added where existing plots meet the water.
+//                         Read-only (region files + state file); planned pieces are drawn over the map.
+//   --earthwork           with --state: earthwork of the adaptive plots vs what the old rules would have moved
+//   --infra               with --state: draw the infrastructure already planned in the state (state.terrain.infra)
 import fs from 'node:fs';
 import path from 'node:path';
 import { TerrainScanner, analyze, classifyCells, summarize, siteScore, harbourSites, simulateGrowth, seamSteps, compareEarthworks, WT, KIND, F } from '../bridge/terrain-scan.mjs';
 import { Raster } from './lib/png.mjs';
+import { TerrainPlanner } from '../bridge/terrain.mjs';
+import { planShoreRenovation, infraList } from '../bridge/infra.mjs';
 
 const NONE = -32768;
 
@@ -30,7 +37,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) throw new Error(`unexpected argument ${a}`);
     const key = a.slice(2);
-    if (['help', 'bench'].includes(key)) { o[key] = true; continue; }
+    if (['help', 'bench', 'migrate', 'earthwork', 'infra'].includes(key)) { o[key] = true; continue; }
     const v = argv[++i];
     if (v === undefined) throw new Error(`missing value for ${a}`);
     o[key] = v;
@@ -91,7 +98,9 @@ const ROLE_COLOR = {
 };
 const roleKey = (p) => (p.role === 'house' ? p.mode : p.role);
 
-function render(an, cells, { scale, view, plots, title, harbours, plan }) {
+const INFRA_COLOR = { quay: [255, 80, 200], pier: [255, 200, 40], promenade: [255, 140, 60], beach: [255, 230, 120], harbour: [0, 255, 255], lane: [255, 255, 255], viewpoint: [255, 40, 40], bridge: [200, 90, 255] };
+
+function render(an, cells, { scale, view, plots, title, harbours, plan, infra = [] }) {
   const { g, smooth, slope, wtype, isWater } = an;
   const { W, D, ground, flags, kind, depth } = g;
   const fs1 = 2;
@@ -178,6 +187,17 @@ function render(an, cells, { scale, view, plots, title, harbours, plan }) {
         img.text(x0 + 4, z0 + 4, label, col, fsz);
       }
       if (p.y != null) img.text(x0 + 4, z0 + 4 + 5 * fsz + 4, String(p.y), [255, 255, 255], fsz, [0, 0, 0]);
+    }
+  }
+
+  // planned / built infrastructure (block footprints)
+  for (const { type, list } of infra) {
+    const col = INFRA_COLOR[type] ?? [255, 255, 255];
+    for (const b of list) {
+      if (b.cmd || b.block.endsWith(':air')) continue;
+      const x = b.x - g.rect.x1, z = b.z - g.rect.z1;
+      if (x < 0 || z < 0 || x >= W || z >= D) continue;
+      for (let a = 0; a < scale; a++) for (let c = 0; c < scale; c++) img.blend(L + x * scale + a, T + z * scale + c, col, 0.85);
     }
   }
 
@@ -270,7 +290,19 @@ async function main() {
   const title = `${view}  x ${rect.x1}..${rect.x2}  z ${rect.z1}..${rect.z2}  origin ${origin.join(',')}`;
   const harbours = harbourSites(cells, { count: 4 });
   const plan = simulateGrowth(cells, { count: Number(o.plots ?? 60), start: [0, 0], harbours });
-  const img = render(an, cells, { harbours, plan, scale: Math.max(1, Number(o.scale ?? 2) | 0), view, plots, title });
+  // Shore renovation dry run / existing infra.
+  const infra = [];
+  let migration = null;
+  if ((o.migrate || o.infra) && !state?.city) throw new Error('--migrate / --infra need --state with a city');
+  if (o.infra) for (const r of Object.values(state.terrain?.infra ?? {})) infra.push({ type: r.type, list: infraList(r) });
+  if (o.migrate) {
+    const planner = new TerrainPlanner({ cmd: async () => '', log: () => {}, chunks: null, worldDir: world, budget: Number(o.budget ?? 3) });
+    planner.setOrigin(state.city.cx, state.city.cz);
+    planner.cover(Object.values(state.plots).map((p) => p.cell), 2);
+    migration = planShoreRenovation({ planner, state, log: () => {} }, { dryRun: true });
+    for (const r of migration) infra.push({ type: r.type, list: infraList(r) });
+  }
+  const img = render(an, cells, { harbours, plan, scale: Math.max(1, Number(o.scale ?? 2) | 0), view, plots, title, infra });
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   fs.writeFileSync(out, img.toPNG());
 
@@ -306,6 +338,31 @@ async function main() {
     const ew = compareEarthworks(plan, cells);
     console.log(`earthworks on ${ew.plots} lots (17x17 interior): today cut ${ew.today.cut} / fill ${ew.today.fill} blocks, max cut ${ew.today.maxCut}, max fill ${ew.today.maxFill}`);
     console.log(`                              adaptive cut ${ew.adaptive.cut} / fill ${ew.adaptive.fill} blocks, max cut ${ew.adaptive.maxCut}, max fill ${ew.adaptive.maxFill} (stilts/walk-out: posts & basements instead)`);
+  }
+  if (migration) {
+    const byType = {};
+    for (const r of migration) byType[r.type] = (byType[r.type] ?? 0) + 1;
+    console.log(`shore renovation (dry run, nothing written): ${migration.length} pieces ${JSON.stringify(byType)}`);
+    for (const r of migration) {
+      const c = r.rect ? [Math.round((r.rect.x1 + r.rect.x2) / 2), Math.round((r.rect.z1 + r.rect.z2) / 2)] : ['?', '?'];
+      const p = r.params;
+      const what = r.type === 'quay' ? `plot ${p.plot} ${p.side} side, street y=${p.y}, water y=${p.waterY}, ${p.steps ? 'stepped bank to the water' : 'quay wall + ladder'}${p.pierAt ? ', gap for the jetty' : ''}`
+        : r.type === 'pier' ? `${p.bottoms.length} long, deck y=${p.deckY}${p.steps ? `, ${p.steps} steps down from the quay` : ''}`
+        : r.type === 'harbour' ? `breakwater ${p.mole.length} columns, lighthouse ${p.light ? 'yes' : 'no'}, landing ${p.landing ? p.landing.bottoms.length + ' long' : 'no'}`
+        : '';
+      console.log(`  ${r.type.padEnd(9)} cell [${r.cell}] around x ${c[0]}, z ${c[1]}: ${r.total} blocks${what ? ' — ' + what : ''}`);
+    }
+  }
+  if (o.earthwork) {
+    const ps = Object.values(state?.plots ?? {}).filter((p) => p.terrain?.legacy);
+    const sum = (f) => ps.reduce((a, p) => a + (f(p) ?? 0), 0);
+    const modes = {};
+    for (const p of ps) modes[p.terrain.mode] = (modes[p.terrain.mode] ?? 0) + 1;
+    console.log(`earthwork on ${ps.length} adaptive plots (lot + apron), modes ${JSON.stringify(modes)}:`);
+    console.log(`  adaptive:  cut ${sum((p) => p.terrain.cut)}, fill ${sum((p) => p.terrain.fill)} (dirt), retaining walls ${sum((p) => p.terrain.wall)}, posts ${sum((p) => p.terrain.posts)}, deck ${sum((p) => p.terrain.deck)} columns, water filled 0`);
+    console.log(`  old rules: cut ${sum((p) => p.terrain.legacy.cut)}, fill ${sum((p) => p.terrain.legacy.fill)} (of it into water ${sum((p) => p.terrain.legacy.water)}), terraces 4 wide`);
+    const hd = ps.map((p) => Math.abs(p.y - p.terrain.legacy.y));
+    console.log(`  street level differs from the old rule by ${hd.length ? (hd.reduce((a, b) => a + b, 0) / hd.length).toFixed(1) : '-'} blocks on average (max ${Math.max(0, ...hd)})`);
   }
   if (o.json) {
     fs.writeFileSync(o.json, JSON.stringify({ rect, origin, cells: [...cells.values()], bodies: an.bodies.filter((b) => b.area >= 20) }, null, 1));

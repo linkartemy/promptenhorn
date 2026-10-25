@@ -346,3 +346,81 @@ Data: `state.city.terrain = { scanVersion, harbourSites:[…], bridges:[…] }`,
 - **Walkability.** Staircases, Treppengasse and stilts need to be run through `tools/walkcheck.mjs` (entry from the street), and we need to verify that villagers (`life.mjs`) and PostAuto (route along the rings) do not get stuck. PostAuto does not drive on stairs: seams ≥2 need a stop or a detour.
 - **Entities.** Boats drift with the current; the steamer and sailboats cost chunk loading and commands. The fleet runs only with a player nearby, boats only in still water.
 - **Generator contract.** Variants must be deterministic and compatible with stages. Old generators ignore new fields in `options`, so the bridge must be able to add stilts and a basement on its own (as `yardExtras` does now).
+
+---
+
+## 11. Implementation (phases 1–5), October 2026
+
+*This section is in English; the design above is the original plan.*
+
+### 11.1 Switches
+
+| Feature id | What it does | Files |
+|---|---|---|
+| `adaptive-terrain` | Scan-driven planning for new plots (cost per cell, level from the scan, earthwork budget, seams by height difference), stair lanes, viewpoints, scan-based site selection for a new city | `bridge/terrain.mjs` (`TerrainPlanner`), `bridge/city.mjs` (`nextCell`, `districtSeed`, `pickType`), plot code in `bridge/bridge.mjs` |
+| `waterfront` | Quays, jetties, promenade, lido beach, harbour | `bridge/infra.mjs` |
+| `river-bridges` | Bridges over rivers (stone arch, covered wooden bridge with a water tower, viaduct) | `bridge/infra.mjs` |
+| `shore-renovation` | Additive migration of existing plots: quays where grass slopes meet water, a jetty, the harbour | `bridge/infra.mjs` (`planShoreRenovation`) |
+
+All four are in `TESTED` (verified on the test server), so the `basic` preset enables them. Old plots are never rebuilt: `plot.terrain` exists only on plots created under the new rules.
+
+### 11.2 How a new plot is made
+
+1. **Survey.** Before `nextCell`, the frontier of the district (neighbours and cells two away) is generated if needed (`ensureGenerated`: force-load through the shared `ChunkLoader`, wait for `execute if loaded`, release — Paper writes chunks on unload; `save-all flush` only if that was not enough, at most every 2 minutes) and the town area is rescanned from the region files (cached per chunk; a 500×500 area costs about 0.5 s, a rescan mostly reads headers).
+2. **Cost.** `nextCell(state, district, terrain)`: distance score + 1.6 × cost. Cost from the lot plan: level 0, terrace 0.8, walkout 1.4, stilts 2.4, +1.2 in a forest, −0.3 on a dry shore lot; `Infinity` for water, cliffs, unknown, built, river cells and cells reserved for infrastructure. If a neighbour is unbuildable but steep or a cliff (stair lane) or a river cell (bridge), the cell behind it is a candidate too (+4 / +6) and the crossing is built.
+3. **Level.** `lotPlan(cell, neighbours)` tries every street level between p2 and p98 of the lot's ground (never below the water next to it) and minimises `cut·1.3 + fill + 25·(cut deeper than 3) + 0.8·(fill deeper than 3) + seam penalty` (a level matching a neighbour saves a seam). No clamp to the neighbours or to the city base. Mode by the remaining drop: `level` ≤ 3, `terrace` ≤ 5, `walkout` ≤ 8, `stilts` ≤ 14, else not buildable.
+4. **Preparation** (`adaptiveOps`, about 70–600 commands per lot, merged into `fill` rows): trees and ground above the level are cut only inside the lot; ground below is filled with dirt, except on the lot edge where a drop of 3+ becomes a rubble retaining wall (stone bricks, mossy bricks, cobble) with a `stone_brick_wall` railing on sides without a neighbour; `stilts` lots get a plank deck on spruce log posts where the ground is deeper than 3; water columns are **never filled**: a quay wall on the outer row (≤ 4 above the water), a plank deck on waterlogged fence posts elsewhere. Around the lot a 2-block apron eases slopes of ≤ 3; a deeper uphill cut is faced with a wall. `walkout`/`terrace` lots get a vaulted cellar with a door in the tallest stretch of the downhill wall, unless the generator builds the variant itself (`TERRAIN_VARIANTS`, see `docs/generator-contract.md` §7).
+5. **Seams** (`seamCommands`, versioned by `STREET_VERSION`, re-applied by renovation): |dy| 1–2 as before; 3–4 a flight across the street with a retaining wall (for 4 the upper edge row becomes a step too); 5–8 a wall along the whole edge with a railing and a Treppengasse along its foot (one flight, a landing half way, a lantern); 9+ wall, railing with flower pots, ivy. Lot railings on a shared edge are taken down.
+6. **Infrastructure** around the plot (`planAfterPlot`): a quay on every side with water within 3 blocks (railing of iron bars, lamps every 6, benches facing the water, a ladder, or a stepped stone bank with a flight of steps down to the water where a grass slope runs into it); a jetty into lakes and the sea (never rivers) out to depth ≥ 3, max 12 long, with steps down from the quay, lanterns and moored boats; a promenade or a lido on shore cells too wet for a house (sand, parasols made of banners on fences, towels, deck chairs, a row of changing cabins with a Swiss flag, boats pulled up, a diving jetty with a tower); a viewpoint on cliff cells next to the town (plank deck on posts at street level, or a stair up to the top; railing, bench, flag, spyglass, sign); bridges and stair lanes where two town plots face each other across one river or steep cell; the harbour once (≥ 4 plots) at the best bay within 2 cells of the town: an L-shaped breakwater with lamps, a red-and-white lighthouse on its head, a steamer landing inside, moored boats. The bay must belong to a lake or sea of ≥ 2500 columns and have an open mouth.
+7. **Crew.** Infrastructure is built by `InfraWorks` (`infraBlocksPerSecond`, default 4, while a chat works), one piece at a time; anchors for boats and steamers are published in `state.terrain.anchors` (`docs/world-anchors.md`). When `bridge/infra.mjs` changes (`INFRA_VERSION`), finished pieces are re-applied additively (no clearing, no new entities). The crew re-asserts the bridge's force-loads when another process dropped them (`ChunkLoader.verify`).
+
+### 11.3 Site selection for a new city (phase 5)
+
+`TerrainPlanner.findSite`: candidates from `locate biome` (river, meadow, plains, sunflower plains, cherry grove) on two rings around `searchOrigin`, hills first (distance to `#is_mountain` / `windswept_hills`); the 8 best are generated (about 380×380 each), scanned and scored by `siteScoreAt` for centres up to 3 cells off: a buildable core, lake > river > sea, harbour sites, mean relief on the ring 3–8 (hills), few cliffs in the core, no water in the centre. Falls back to the old probe-based `findValley`. On the test server (origin 0,40000) it surveyed 8 sites in about 2 minutes and chose a meadow at −739,38837 between two rivers with hills to the north (score −78.5; the runner-up −44).
+
+### 11.4 Test evidence (shared test server, 25.10.2026)
+
+**Town 1** (new rules from the start, 196 plots grown by 9 simulated chats): the rivers on three sides untouched; terraced lots with rubble walls, stilt houses over the slopes, 10 stair lanes (straight and three-flight switchbacks), 7 viewpoints, 4 covered bridges with water towers, 68 quays, 12 promenades, 2 jetties, a lido beach, a harbour.
+
+![Town 1](terrain-adaptive/town1-final-iso-se.png)
+
+Terraces, walls and a stilt house on the west slope; the switchback lane (three flights, lamps at the landings) seen from above; a Treppengasse seam between the square and the clock tower plot (6 blocks):
+
+![West slope](terrain-adaptive/west-iso-sw.png) ![Stair lane](terrain-adaptive/lane-47-top.png) ![Seam](terrain-adaptive/seam-treppengasse-sw.png)
+
+Covered bridge with the water tower, and the stone arch bridge (built with `.dev/terrain/bridgetest.mjs` on a narrower river: 965 blocks, 0 errors):
+
+![Covered bridge](terrain-adaptive/bridge-covered-sw.png) ![Arch bridge](terrain-adaptive/bridge-arch-sw.png)
+
+**Town 2** (migration test): 26 plots built with the old rules on a sea coast, then all four switches turned on live. Shore renovation planned 4 quays, a jetty and the harbour at once and the crew built them; new plots then followed the new rules (a `lido` building turned to the water, a beach, a promenade, a stair lane, a viewpoint).
+
+![Before](terrain-adaptive/town2-legacy-before-sw.png) ![After](terrain-adaptive/town2-after-sw.png)
+
+Stepped stone quay with lamps, benches and a jetty on the old plots; the coast with the harbour, the lido and the beach:
+
+![Quays](terrain-adaptive/town2-quays-ne.png) ![Coast](terrain-adaptive/town2-coast-sw.png)
+
+**Earthwork** (`node tools/terrain-report.mjs --state <state> --earthwork …`; "old rules" = the probe level clamped to ±1 of the neighbours and ±12 of the base, the lot levelled, 1:1 terraces 4 wide, computed on the same natural scan when the plot was created):
+
+| Town | Plots | New rules: cut / fill / walls | Old rules: cut / fill (of it into water) |
+|---|---|---|---|
+| 1 (hills between rivers) | 183 | 29 320 / 45 956 / 17 414 | 40 229 / 840 507 (28 512) |
+| 2 (coastal plain) | 40 | 6 651 / 3 431 / 1 036 | 41 936 / 2 174 (260) |
+
+Water filled under the new rules: 0. Seam steps in town 1: 0–1: 111, 2–4: 113, 5–8: 46, 9+: 12. The old-rule numbers of town 1 are inflated for its first ~100 plots, whose old-rule clamp used the neighbours' new levels (fixed afterwards); town 2's are consistent.
+
+All 74 385 block strings emitted by the infrastructure and the lot preparation validate against the 1.21.11 block report (`node .dev/terrain/validate-infra.mjs`).
+
+### 11.5 The live city (dry run, read-only)
+
+`node tools/terrain-report.mjs --world server/world --state <copy of state.json> --rect -1250,800,-800,1250 --migrate` plans for the live Promptenhorn (29 plots): quays on the east side of plots 3,0 and 3,−1 (stepped banks, street y=63, water y=62), a 6-block jetty from 3,0 into the lake, and the harbour in the lake bay at cell [5,4] (about −919, 1105; breakwater 52 columns, lighthouse, a 9-block steamer landing). The cell [3,−1] proposed in §2.3 has been built over since.
+
+![Live city, planned pieces](terrain-adaptive/live-migrate.png)
+
+### 11.6 Not done / open
+
+- Contour blocks (§6.2) and irregular plots: not started (the grid is kept on purpose).
+- The fleet (moving boats, the steamer) belongs to the life agent; the anchors are ready.
+- A generator lighthouse on the breakwater head (the bridge builds its own).
+- PostAuto and residents do not know stairs and decks; lanes are not run through `tools/walkcheck.mjs` automatically.
+- Viaducts are only chosen for gorges (relief ≥ 12 with deep water); none occurred in the tests, so that builder is untested in game.

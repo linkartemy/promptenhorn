@@ -1,0 +1,376 @@
+20:07:44 Archived generator version ce0dab702063 in C:\Users\linka\Desktop\projects\promptenhorn\.dev\test-archive-terrain\ce0dab702063
+20:07:44 Generator version ce0dab702063
+20:07:44 Preset basic: renovation
+20:07:44 Promptenhorn bridge listening on http://127.0.0.1:7782  (settings: http://127.0.0.1:7782/)
+20:07:44 Connected to Minecraft server via RCON
+20:07:49 New session t00terr- in Seeufer
+20:07:49 New session t01terr- in Seeufer
+20:07:49 New session t02terr- in Seeufer
+20:07:49 New session t10terr- in Bergdorf
+20:07:49 New session t11terr- in Bergdorf
+20:07:49 New session t12terr- in Bergdorf
+20:07:49 Plot 0,0 (core): square, 1045 blocks, y=66
+20:07:49 Plot 2,1 (core): plaza, 803 blocks, y=63
+20:07:50 District "Seeufer" founded at cell 2,1
+20:07:50 Plot 1,1 (core): townhouse, 1888 blocks, y=65
+20:07:50 Plot 1,0 (core): clocktower, 1575 blocks, y=65
+20:07:50 Plot 0,1 (core): church, 1117 blocks, y=65
+20:07:50 Plot -2,0 (core): plaza, 793 blocks, y=66
+20:07:50 District "Bergdorf" founded at cell -2,0
+20:07:50 Plot -1,0 (core): cafe, 1669 blocks, y=66
+20:07:50 Plot -1,1 (core): townhouse, 1590 blocks, y=65
+20:07:51 Plot -1,-1 (core): cafe, 1665 blocks, y=65
+20:08:15 Finished church at 0,1
+20:08:15 Plot 2,0 (core): townhouse, 1919 blocks, y=64
+20:08:25 Finished clocktower at 1,0
+20:08:26 Plot 1,-1 (core): townhouse, 1610 blocks, y=65
+20:08:26 Finished townhouse at -1,1
+20:08:26 Plot 0,-1 (core): townhouse, 1979 blocks, y=65
+20:08:28 Finished cafe at -1,0
+20:08:28 Plot -2,1 (core): townhouse, 1601 blocks, y=66
+20:08:28 Finished cafe at -1,-1
+20:08:29 Plot -2,-1 (core): townhouse, 1982 blocks, y=65
+20:08:33 Finished townhouse at 1,1
+20:08:34 Plot 1,2 (core): cafe, 1664 blocks, y=64
+20:09:00 Finished townhouse at 2,0
+20:09:01 Plot 2,2 (core): townhouse, 1980 blocks, y=64
+20:14:00 Archived generator version 8ad44f2af75d in C:\Users\linka\Desktop\projects\promptenhorn\.dev\test-archive-terrain\8ad44f2af75d
+20:14:00 Generator version 8ad44f2af75d
+20:14:00 Preset basic: renovation
+20:14:00 Promptenhorn bridge listening on http://127.0.0.1:7782  (settings: http://127.0.0.1:7782/)
+20:14:01 Connected to Minecraft server via RCON
+20:14:01 Plot 1,2: generators ce0dab702063 -> 8ad44f2af75d: removed 0, 1200 already right, 464 to place
+20:14:01 Plot 1,-1: generators ce0dab702063 -> 8ad44f2af75d: removed 0, 1543 already right, 67 to place
+20:14:01 Plot 2,2: generators ce0dab702063 -> 8ad44f2af75d: removed 0, 50 already right, 1930 to place
+20:14:01 Plot -2,1: generators ce0dab702063 -> 8ad44f2af75d: removed 0, 1417 already right, 184 to place
+20:14:01 Plot 0,-1: generators ce0dab702063 -> 8ad44f2af75d: removed 0, 1536 already right, 443 to place
+20:14:01 Plot -2,-1: generators ce0dab702063 -> 8ad44f2af75d: removed 0, 1411 already right, 571 to place
+20:14:01 Renovating 0,0 (gen): 0 changes
+20:14:01 Renovation of 0,0 done
+20:14:01 Finished townhouse at 1,-1
+20:14:01 Renovating -2,0 (gen): 0 changes
+20:14:01 Renovation of -2,0 done
+20:14:02 Plot 0,2 (core): cafe, 1647 blocks, y=65
+20:14:02 Renovating 2,1 (gen): 0 changes
+20:14:02 Renovation of 2,1 done
+20:14:02 Renovating 1,0 (gen): 0 changes
+20:14:02 Renovation of 1,0 done
+20:14:02 Finished townhouse at -2,1
+20:14:02 Renovating 0,1 (gen): 0 changes
+20:14:02 Renovation of 0,1 done
+20:14:02 Plot -3,0 (inner): church, 1212 blocks, y=66
+20:14:03 Renovating -1,0 (gen): 0 changes
+20:14:03 Renovation of -1,0 done
+20:14:03 Renovating 1,1 (gen): 0 changes
+20:14:03 Renovation of 1,1 done
+20:14:03 Renovating -1,1 (gen): 0 changes
+20:14:03 Renovation of -1,1 done
+20:14:03 Renovating -1,-1 (gen): 0 changes
+20:14:03 Renovation of -1,-1 done
+20:14:04 Renovating 2,0 (gen): 0 changes
+20:14:04 Renovation of 2,0 done
+20:14:07 Finished townhouse at 0,-1
+20:14:07 Plot -1,2 (core): townhouse, 1980 blocks, y=66
+20:14:07 Finished cafe at 1,2
+20:14:08 Plot 2,-1 (core): townhouse, 1786 blocks, y=64
+20:14:10 Finished townhouse at -2,-1
+20:14:10 Plot -1,-2 (core): cafe, 1603 blocks, y=64
+20:14:29 Finished church at -3,0
+20:14:29 Plot 0,-2 (core): cafe, 1290 blocks, y=64
+20:14:37 Finished cafe at 0,2
+20:14:37 Plot 3,1 (inner): modern, 1180 blocks, y=63
+20:14:42 Finished townhouse at 2,2
+20:14:42 Plot 3,0 (inner): hotel, 2539 blocks, y=63
+20:14:47 Finished cafe at -1,-2
+20:14:48 Plot -3,1 (inner): apartment, 2046 blocks, y=67
+20:14:49 Finished townhouse at 2,-1
+20:14:50 Plot 3,2 (inner): townhouse, 1522 blocks, y=63
+20:16:23 Features: adaptive-terrain on, waterfront on, river-bridges on, shore-renovation on
+20:16:23 Settings reloaded from .dev/test-config-terrain2.json: language en, preset basic, changed adaptive-terrain=on waterfront=on river-bridges=on shore-renovation=on
+20:16:24 Shore renovation 1: quay at cell 1,-1 (125 blocks)
+20:16:24 Shore renovation 2: pier at cell 1,-2 (128 blocks)
+20:16:24 Shore renovation 3: quay at cell 2,-1 (68 blocks)
+20:16:24 Shore renovation 4: quay at cell 2,-1 (71 blocks)
+20:16:24 Shore renovation 5: quay at cell -1,-2 (62 blocks)
+20:16:24 Shore renovation 6: harbour at cell 3,3 (943 blocks)
+20:16:24 Shore renovation: 6 pieces planned
+20:16:26 Infra 1 (quay) finished
+20:16:27 Finished cafe at 0,-2
+20:16:28 Plot -3,-1: level at y=67 (drop 3, cut 119, fill 130, wall 18, posts 0, deck 0; 133 commands)
+20:16:28 Plot -3,-1 (inner): modern, 836 blocks, y=67
+20:16:28 Infra 2 (pier) finished
+20:16:29 Infra 3 (quay) finished
+20:16:30 Infra 4 (quay) finished
+20:16:31 Infra 5 (quay) finished
+20:16:47 Finished modern at -3,-1
+20:16:47 Infra 6 (harbour) finished
+20:16:48 Plot -2,2: level at y=69 (drop 2, cut 218, fill 44, wall 2, posts 0, deck 0; 135 commands)
+20:16:48 Plot -2,2 (core): townhouse, 1920 blocks, y=69
+20:16:48 Infra 7: viewpoint at cell -2,3 (146 blocks)
+20:16:48 Finished townhouse at -1,2
+20:16:48 Plot -3,2: level at y=71 (drop 3, cut 55, fill 41, wall 45, posts 0, deck 0; 120 commands)
+20:16:48 Plot -3,2 (inner): cafe, 1662 blocks, y=71
+20:16:50 Infra 7 (viewpoint) finished
+20:23:33 Archived generator version 9e68737916e2 in C:\Users\linka\Desktop\projects\promptenhorn\.dev\test-archive-terrain\9e68737916e2
+20:23:33 Generator version 9e68737916e2
+20:23:33 Preset basic: renovation, adaptive-terrain, waterfront, river-bridges, shore-renovation
+20:23:33 Promptenhorn bridge listening on http://127.0.0.1:7782  (settings: http://127.0.0.1:7782/)
+20:23:33 Connected to Minecraft server via RCON
+20:23:33 Plot 3,2: generators 8ad44f2af75d -> 9e68737916e2: removed 0, 1125 already right, 397 to place
+20:23:33 Plot 3,1: generators 8ad44f2af75d -> 9e68737916e2: removed 0, 970 already right, 210 to place
+20:23:33 Plot 3,0: generators 8ad44f2af75d -> 9e68737916e2: removed 0, 1105 already right, 1434 to place
+20:23:33 Plot -2,2: generators 8ad44f2af75d -> 9e68737916e2: removed 0, 1241 already right, 679 to place
+20:23:33 Plot -3,2: generators 8ad44f2af75d -> 9e68737916e2: removed 0, 1356 already right, 306 to place
+20:23:33 Plot -3,1: generators 8ad44f2af75d -> 9e68737916e2: removed 0, 1612 already right, 434 to place
+20:23:33 Renovating 0,0 (gen): 1 changes
+20:23:33 Renovation of 0,0 done
+20:23:34 Renovating -2,0 (gen): 0 changes
+20:23:34 Renovation of -2,0 done
+20:23:34 Renovating 2,1 (gen): 0 changes
+20:23:34 Renovation of 2,1 done
+20:23:34 Renovating 1,0 (gen): 0 changes
+20:23:34 Renovation of 1,0 done
+20:23:35 Renovating 0,1 (gen): 0 changes
+20:23:35 Renovation of 0,1 done
+20:23:35 Finished modern at 3,1
+20:23:35 Renovating -1,0 (gen): 0 changes
+20:23:35 Renovation of -1,0 done
+20:23:36 Plot 2,3: level at y=64 (drop 1, cut 163, fill 0, wall 0, posts 0, deck 0; 87 commands)
+20:23:36 Plot 2,3 (inner): townhouse, 1517 blocks, y=64
+20:23:36 Infra 8: quay at cell 2,3 (134 blocks)
+20:23:36 Renovating 0,-1 (gen): 0 changes
+20:23:36 Renovation of 0,-1 done
+20:23:36 Finished cafe at -3,2
+20:23:36 Renovating 1,1 (gen): 0 changes
+20:23:36 Renovation of 1,1 done
+20:23:36 Plot -3,-2: level at y=64 (drop 1, cut 73, fill 0, wall 0, posts 0, deck 0; 67 commands)
+20:23:36 Plot -3,-2 (inner): hotel, 2461 blocks, y=64
+20:23:36 Renovating -1,1 (gen): 0 changes
+20:23:36 Renovation of -1,1 done
+20:23:37 Renovating -1,-1 (gen): 0 changes
+20:23:37 Renovation of -1,-1 done
+20:23:37 Renovating 1,-1 (gen): 0 changes
+20:23:37 Renovation of 1,-1 done
+20:23:37 Renovating 2,0 (gen): 0 changes
+20:23:37 Renovation of 2,0 done
+20:23:37 Infra 8 (quay) finished
+20:23:37 Renovating 0,2 (gen): 0 changes
+20:23:37 Renovation of 0,2 done
+20:23:38 Finished townhouse at 3,2
+20:23:38 Renovating 0,-2 (gen): 0 changes
+20:23:38 Renovation of 0,-2 done
+20:23:38 Plot 1,3: level at y=65 (drop 2, cut 98, fill 33, wall 0, posts 0, deck 0; 88 commands)
+20:23:38 Plot 1,3 (inner): chalet, 1296 blocks, y=65
+20:23:38 Renovating -2,1 (gen): 0 changes
+20:23:38 Renovation of -2,1 done
+20:23:39 Renovating -2,-1 (gen): 0 changes
+20:23:39 Renovation of -2,-1 done
+20:23:39 Finished apartment at -3,1
+20:23:39 Renovating 1,2 (gen): 0 changes
+20:23:39 Renovation of 1,2 done
+20:23:39 Plot -4,0: level at y=69 (drop 2, cut 326, fill 57, wall 0, posts 0, deck 0; 172 commands)
+20:23:39 Plot -4,0 (inner): cafe, 1603 blocks, y=69
+20:23:39 Renovating -1,2 (gen): 0 changes
+20:23:39 Renovation of -1,2 done
+20:23:40 Renovating 2,-1 (gen): 0 changes
+20:23:40 Renovation of 2,-1 done
+20:23:40 Renovating -1,-2 (gen): 0 changes
+20:23:40 Renovation of -1,-2 done
+20:23:40 Renovating 2,2 (gen): 0 changes
+20:23:40 Renovation of 2,2 done
+20:23:40 Renovating -3,0 (gen): 0 changes
+20:23:40 Renovation of -3,0 done
+20:23:41 Renovating -3,-1 (gen): 0 changes
+20:23:41 Renovation of -3,-1 done
+20:23:45 Finished townhouse at -2,2
+20:23:45 Plot -2,-2: terrace at y=66 (drop 4, cut 220, fill 407, wall 50, posts 0, deck 0; 212 commands)
+20:23:45 Plot -2,-2 (core): townhouse, 1879 blocks, y=66
+20:24:02 Finished hotel at 3,0
+20:24:03 Plot 0,3: level at y=65 (drop 2, cut 274, fill 24, wall 0, posts 0, deck 0; 142 commands)
+20:24:03 Plot 0,3 (inner): apartment, 1815 blocks, y=65
+20:24:08 Finished chalet at 1,3
+20:24:09 Plot 2,4: level at y=64 (drop 2, cut 327, fill 62, wall 0, posts 0, deck 0; 148 commands)
+20:24:09 Plot 2,4 (inner): lido, 696 blocks, y=64
+20:24:09 Infra 9: quay at cell 2,4 (139 blocks)
+20:24:09 Infra 10: pier at cell 3,4 (91 blocks)
+20:24:09 Finished townhouse at 2,3
+20:24:10 Plot 1,4: level at y=66 (drop 2, cut 32, fill 50, wall 2, posts 0, deck 0; 81 commands)
+20:24:10 Plot 1,4 (inner): townhouse, 1602 blocks, y=66
+20:24:11 Infra 9 (quay) finished
+20:24:12 Infra 10 (pier) finished
+20:24:16 Finished cafe at -4,0
+20:24:17 Plot -4,1: level at y=69 (drop 1, cut 264, fill 1, wall 0, posts 0, deck 0; 114 commands)
+20:24:17 Plot -4,1 (inner): apartment, 1518 blocks, y=69
+20:24:23 Finished lido at 2,4
+20:24:23 Plot 0,4: level at y=66 (drop 2, cut 165, fill 105, wall 22, posts 0, deck 0; 124 commands)
+20:24:23 Plot 0,4 (inner): cafe, 1615 blocks, y=66
+20:24:29 Finished townhouse at -2,-2
+20:24:29 Plot -4,2: level at y=73 (drop 2, cut 274, fill 47, wall 11, posts 0, deck 0; 138 commands)
+20:24:29 Plot -4,2 (inner): townhouse, 1889 blocks, y=73
+20:24:32 Finished hotel at -3,-2
+20:24:33 Plot -4,-2: level at y=64 (drop 1, cut 153, fill 0, wall 0, posts 0, deck 0; 94 commands)
+20:24:33 Plot -4,-2 (inner): apartment, 1821 blocks, y=64
+20:24:33 Infra 11: lane at cell -4,-1 (354 blocks)
+20:24:38 Infra 11 (lane) finished
+20:25:16 Force-loaded chunks were dropped by someone else; held them again
+20:25:59 Finished apartment at 0,3
+20:26:14 Plot 1,5: level at y=67 (drop 2, cut 301, fill 47, wall 0, posts 0, deck 0; 148 commands)
+20:26:14 Plot 1,5 (outer): modern, 1179 blocks, y=67
+20:26:26 Finished townhouse at 1,4
+20:26:38 Plot 2,5: level at y=65 (drop 3, cut 31, fill 219, wall 6, posts 0, deck 0; 133 commands)
+20:26:38 Plot 2,5 (outer): apartment, 1524 blocks, y=65
+20:26:38 Infra 12: pier at cell 3,5 (54 blocks)
+20:26:38 Infra 13: beach at cell 3,5 (390 blocks)
+20:26:39 Infra 12 (pier) finished
+20:26:40 Finished apartment at -4,1
+20:26:40 Plot -3,3: level at y=72 (drop 1, cut 126, fill 1, wall 0, posts 0, deck 0; 68 commands)
+20:26:40 Plot -3,3 (inner): modern, 1018 blocks, y=72
+20:26:45 Infra 13 (beach) finished
+20:26:46 Finished cafe at 0,4
+20:26:46 Plot 2,6: level at y=67 (drop 1, cut 183, fill 0, wall 0, posts 0, deck 0; 87 commands)
+20:26:46 Plot 2,6 (outer): chalet, 1207 blocks, y=67
+20:26:58 Finished townhouse at -4,2
+20:26:59 Plot -3,-3: level at y=64 (drop 1, cut 48, fill 0, wall 0, posts 0, deck 0; 79 commands)
+20:26:59 Plot -3,-3 (inner): apartment, 1815 blocks, y=64
+20:26:59 Finished modern at 1,5
+20:27:00 Plot 3,6: level at y=66 (drop 3, cut 170, fill 129, wall 31, posts 0, deck 0; 154 commands)
+20:27:00 Plot 3,6 (outer): apartment, 1526 blocks, y=66
+20:27:00 Infra 14: promenade at cell 4,6 (526 blocks)
+20:27:00 Finished apartment at -4,-2
+20:27:01 Plot -2,-3: terrace at y=67 (drop 4, cut 281, fill 203, wall 51, posts 0, deck 0; 212 commands)
+20:27:01 Plot -2,-3 (inner): cafe, 1667 blocks, y=67
+20:27:01 Finished modern at -3,3
+20:27:02 Plot -1,-3: terrace at y=68 (drop 4, cut 231, fill 146, wall 28, posts 6, deck 35; 178 commands)
+20:27:02 Plot -1,-3 (inner): chalet, 1254 blocks, y=68
+20:27:02 Infra 15: quay at cell -1,-3 (120 blocks)
+20:27:02 Infra 16: quay at cell -1,-3 (175 blocks)
+20:27:08 Infra 14 (promenade) finished
+20:27:09 Finished apartment at 2,5
+20:27:09 Plot 2,7: level at y=68 (drop 3, cut 80, fill 157, wall 12, posts 0, deck 0; 117 commands)
+20:27:09 Plot 2,7 (rural): farmhouse, 873 blocks, y=68
+20:27:10 Infra 15 (quay) finished
+20:27:13 Infra 16 (quay) finished
+20:27:14 Finished chalet at 2,6
+20:27:15 Plot 1,7: level at y=69 (drop 2, cut 138, fill 19, wall 0, posts 0, deck 0; 78 commands)
+20:27:15 Plot 1,7 (rural): hut, 861 blocks, y=69
+20:27:15 Infra 17: lane at cell 1,6 (320 blocks)
+20:27:20 Infra 17 (lane) finished
+20:27:29 Finished farmhouse at 2,7
+20:27:30 Plot 0,7: level at y=70 (drop 1, cut 0, fill 7, wall 0, posts 0, deck 0; 55 commands)
+20:27:30 Plot 0,7 (rural): chalet, 1450 blocks, y=70
+20:27:31 Finished chalet at -1,-3
+20:27:31 Plot -2,-4: level at y=66 (drop 3, cut 348, fill 405, wall 70, posts 0, deck 0; 270 commands)
+20:27:31 Plot -2,-4 (inner): apartment, 2057 blocks, y=66
+20:27:35 Finished hut at 1,7
+20:27:35 Finished apartment at 3,6
+20:27:35 Plot 0,6: terrace at y=69 (drop 5, cut 60, fill 25, wall 20, posts 1, deck 6; 100 commands)
+20:27:35 Plot 0,6 (outer): apartment, 1523 blocks, y=69
+20:27:35 Plot -1,6: level at y=69 (drop 1, cut 94, fill 0, wall 0, posts 0, deck 0; 85 commands)
+20:27:35 Plot -1,6 (outer): modern, 1011 blocks, y=69
+20:27:40 Finished cafe at -2,-3
+20:27:41 Plot -4,3: level at y=71 (drop 1, cut 228, fill 0, wall 0, posts 0, deck 0; 89 commands)
+20:27:41 Plot -4,3 (inner): cafe, 1678 blocks, y=71
+20:27:41 Finished apartment at -3,-3
+20:27:42 Plot -5,-2: level at y=63 (drop 1, cut 77, fill 0, wall 75, posts 7, deck 39; 268 commands)
+20:27:42 Plot -5,-2 (outer): boathouse, 876 blocks, y=63
+20:27:42 Infra 18: quay at cell -5,-2 (88 blocks)
+20:27:42 Infra 19: quay at cell -5,-2 (73 blocks)
+20:27:42 Infra 20: quay at cell -5,-2 (76 blocks)
+20:27:43 Infra 18 (quay) finished
+20:27:44 Infra 19 (quay) finished
+20:27:45 Infra 20 (quay) finished
+20:27:58 Finished modern at -1,6
+20:27:59 Plot -1,5: level at y=69 (drop 2, cut 218, fill 15, wall 8, posts 0, deck 0; 112 commands)
+20:27:59 Plot -1,5 (outer): farmhouse, 891 blocks, y=69
+20:28:02 Finished boathouse at -5,-2
+20:28:02 Plot -5,-1: level at y=63 (drop 1, cut 66, fill 0, wall 104, posts 19, deck 138; 361 commands)
+20:28:02 Plot -5,-1 (outer): modern, 840 blocks, y=63
+20:28:02 Infra 21: quay at cell -5,-1 (88 blocks)
+20:28:02 Infra 22: quay at cell -5,-1 (19 blocks)
+20:28:02 Infra 23: quay at cell -5,-1 (27 blocks)
+20:28:03 Infra 21 (quay) finished
+20:28:03 Infra 22 (quay) finished
+20:28:03 Finished chalet at 0,7
+20:28:04 Plot -2,5: terrace at y=68 (drop 4, cut 16, fill 63, wall 20, posts 0, deck 0; 92 commands)
+20:28:04 Plot -2,5 (outer): townhouse, 1872 blocks, y=68
+20:28:04 Infra 23 (quay) finished
+20:28:11 Finished apartment at 0,6
+20:28:11 Plot -2,4: level at y=70 (drop 3, cut 187, fill 38, wall 39, posts 0, deck 0; 155 commands)
+20:28:11 Plot -2,4 (inner): chalet, 1144 blocks, y=70
+20:28:11 Infra 24: lane at cell -1,4 (322 blocks)
+20:28:16 Infra 24 (lane) finished
+20:28:19 Finished cafe at -4,3
+20:28:20 Plot -3,-4: level at y=64 (drop 1, cut 138, fill 9, wall 0, posts 0, deck 1; 167 commands)
+20:28:20 Plot -3,-4 (inner): townhouse, 1910 blocks, y=64
+20:28:20 Finished apartment at -2,-4
+20:28:20 Finished farmhouse at -1,5
+20:28:20 Plot -1,-4: terrace at y=66 (drop 4, cut 308, fill 210, wall 262, posts 9, deck 62; 509 commands)
+20:28:20 Plot -1,-4 (inner): modern, 1021 blocks, y=66
+20:28:20 Infra 25: quay at cell -1,-4 (142 blocks)
+20:28:20 Infra 26: pier at cell 0,-4 (44 blocks)
+20:28:20 Infra 27: quay at cell -1,-4 (79 blocks)
+20:28:21 Plot -3,4: terrace at y=71 (drop 4, cut 252, fill 232, wall 50, posts 0, deck 0; 169 commands)
+20:28:21 Plot -3,4 (inner): cafe, 1668 blocks, y=71
+20:28:21 Finished modern at -5,-1
+20:28:22 Plot -4,-3: terrace at y=67 (drop 4, cut 166, fill 505, wall 107, posts 0, deck 0; 291 commands)
+20:28:22 Plot -4,-3 (inner): modern, 837 blocks, y=67
+20:28:22 Infra 25 (quay) finished
+20:28:23 Infra 26 (pier) finished
+20:28:24 Infra 27 (quay) finished
+20:28:25 Force-loaded chunks were dropped by someone else; held them again
+20:28:52 Finished chalet at -2,4
+20:29:04 Plot -3,5: level at y=67 (drop 1, cut 143, fill 0, wall 3, posts 0, deck 0; 63 commands)
+20:29:05 Plot -3,5 (outer): modern, 834 blocks, y=67
+20:29:41 Finished modern at -4,-3
+20:29:52 Plot -2,-5: level at y=63 (drop 0, cut 280, fill 0, wall 0, posts 0, deck 0; 110 commands)
+20:29:53 Plot -2,-5 (outer): apartment, 1807 blocks, y=63
+20:30:05 Finished modern at -1,-4
+20:30:13 Plot -1,-5: level at y=63 (drop 1, cut 12, fill 0, wall 32, posts 18, deck 130; 233 commands)
+20:30:13 Plot -1,-5 (outer): chalet, 1403 blocks, y=63
+20:30:13 Infra 28: quay at cell -1,-5 (88 blocks)
+20:30:13 Infra 29: quay at cell -1,-5 (39 blocks)
+20:30:14 Infra 28 (quay) finished
+20:30:14 Infra 29 (quay) finished
+20:30:14 Finished townhouse at -2,5
+20:30:15 Plot -4,4: level at y=69 (drop 3, cut 195, fill 150, wall 18, posts 1, deck 11; 144 commands)
+20:30:15 Plot -4,4 (inner): townhouse, 1602 blocks, y=69
+20:30:22 Finished modern at -3,5
+20:30:23 Plot -2,6: level at y=67 (drop 1, cut 200, fill 0, wall 12, posts 0, deck 0; 134 commands)
+20:30:23 Plot -2,6 (outer): apartment, 1524 blocks, y=67
+20:30:23 Finished cafe at -3,4
+20:30:24 Plot -1,7: level at y=70 (drop 2, cut 26, fill 37, wall 0, posts 0, deck 0; 77 commands)
+20:30:24 Plot -1,7 (rural): farmhouse, 889 blocks, y=70
+20:30:29 Finished townhouse at -3,-4
+20:30:29 Plot -5,2: terrace at y=74 (drop 5, cut 267, fill 193, wall 88, posts 0, deck 0; 312 commands)
+20:30:29 Plot -5,2 (outer): cafe, 1266 blocks, y=74
+20:30:41 Finished chalet at -1,-5
+20:30:41 Plot -3,-5: level at y=65 (drop 3, cut 237, fill 107, wall 6, posts 0, deck 0; 153 commands)
+20:30:41 Plot -3,-5 (outer): modern, 834 blocks, y=65
+20:30:44 Finished farmhouse at -1,7
+20:30:45 Plot -5,4: level at y=70 (drop 1, cut 204, fill 1, wall 0, posts 0, deck 0; 78 commands)
+20:30:45 Plot -5,4 (outer): townhouse, 1548 blocks, y=70
+20:30:49 Finished apartment at -2,-5
+20:30:49 Plot -5,3: level at y=73 (drop 3, cut 329, fill 69, wall 24, posts 0, deck 0; 138 commands)
+20:30:49 Plot -5,3 (outer): townhouse, 1767 blocks, y=73
+20:30:50 Finished townhouse at -4,4
+20:30:51 Plot 3,7: level at y=67 (drop 3, cut 31, fill 120, wall 12, posts 10, deck 79; 221 commands)
+20:30:51 Plot 3,7 (rural): boathouse, 876 blocks, y=67
+20:30:51 Infra 30: quay at cell 3,7 (155 blocks)
+20:30:51 Infra 31: pier at cell 4,7 (145 blocks)
+20:30:51 Infra 32: quay at cell 3,7 (101 blocks)
+20:30:53 Infra 30 (quay) finished
+20:30:55 Infra 31 (pier) finished
+20:30:57 Infra 32 (quay) finished
+20:30:58 Finished apartment at -2,6
+20:30:58 Plot -2,7: level at y=69 (drop 2, cut 214, fill 108, wall 57, posts 0, deck 0; 184 commands)
+20:30:58 Plot -2,7 (rural): farmhouse, 892 blocks, y=69
+20:30:59 Finished cafe at -5,2
+20:30:59 Plot -5,0: walkout at y=68 (drop 6, cut 288, fill 287, wall 113, posts 1, deck 10; 304 commands)
+20:30:59 Plot -5,0 (outer): apartment, 2057 blocks, y=68
+20:30:59 Infra 33: quay at cell -5,0 (145 blocks)
+20:30:59 Infra 34: lane at cell -5,1 (471 blocks)
+20:31:00 Finished modern at -3,-5
+20:31:01 Plot -4,-4: terrace at y=70 (drop 5, cut 359, fill 192, wall 123, posts 0, deck 0; 355 commands)
+20:31:01 Plot -4,-4 (inner): chalet, 1256 blocks, y=70
+20:31:01 Infra 35: viewpoint at cell -4,-5 (171 blocks)
+20:31:01 Infra 33 (quay) finished

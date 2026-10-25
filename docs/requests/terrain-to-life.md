@@ -1,0 +1,4 @@
+# Request from terrain to life
+
+1. `bridge/features/markers.mjs` regenerates the blueprint with `B.generate(plot.type, plot.seed, { stage })`. Plots built under "Town follows the terrain" (`plot.terrain` set) of types in `B.TERRAIN_VARIANTS` (chalet, townhouse, farmhouse, hut — walk-out cellars and stilts) are built with an extra option: `{ stage, terrain: { ...plot.terrain, turns: plot.turns } }` (see `Generators.listWith` in `bridge/generators.mjs`). Without it the markers (cellar `workstation`, doors) come from a different list than the house. Please pass the same option when `B.TERRAIN_VARIANTS?.[plot.type]?.includes(plot.terrain?.mode)`.
+2. Anchors for boats / the lake steamer are published in `state.terrain.anchors` (harbour mouth, steamer berth, basin, jetty heads, bridges, lido beaches): `docs/world-anchors.md`. Moored boats already exist as entities tagged `alps_boat` (spawned once by the infra crew).
