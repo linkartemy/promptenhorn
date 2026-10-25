@@ -295,7 +295,7 @@ async function followRequests(ctx) {
   if (!(await ctx.cmd('execute if entity @a[scores={alps_follow=1..}]')).includes('passed')) return;
   for (const name of ctx.players()) {
     const out = await ctx.cmd(`scoreboard players get ${name} alps_follow`);
-    const n = Number(out.match(/has (d+)/)?.[1] ?? 0);
+    const n = Number(out.match(/has (\d+)/)?.[1] ?? 0);
     if (!n) continue;
     await ctx.cmd(`scoreboard players set ${name} alps_follow 0`);
     await ctx.cmd(`scoreboard players enable ${name} alps_follow`);

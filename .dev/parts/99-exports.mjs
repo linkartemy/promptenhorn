@@ -2,8 +2,23 @@
 // ================================================================ registry
 
 const RAW = { chalet, townhouse, cafe, church, clocktower, hotel, modern, apartment, farmhouse, hut };
-/** type -> (rng, options) => Blueprint, with the shared semantic markers (doors, seats, beds, ...) added. */
-export const BUILDINGS = Object.fromEntries(Object.entries(RAW).map(([type, gen]) => [type, (rng, options) => autoMarks(gen(rng, options), type)]));
+
+/**
+ * Growth stages per type (docs/generator-contract.md §3): 1 small house, 2 full house, 3 extension.
+ * Types not listed have one stage (the full building) whatever stage is asked for.
+ */
+export const STAGES = { chalet: 3, townhouse: 3, cafe: 3, hotel: 3, modern: 3, apartment: 3, farmhouse: 3, hut: 3 };
+
+/**
+ * type -> (rng, options) => Blueprint at options.stage (default: the last stage), with the shared semantic
+ * markers (doors, seats, beds, ...) added. Generators always draw every stage, so rng use is the same for all.
+ */
+export const BUILDINGS = Object.fromEntries(Object.entries(RAW).map(([type, gen]) => [type, (rng, options = {}) => {
+  const max = STAGES[type] ?? 1;
+  const stage = Math.max(1, Math.min(max, Math.round(Number(options?.stage) || max)));
+  const bp = gen(rng, options ?? {});
+  return autoMarks(max > 1 ? bp.atStage(stage) : bp, type);
+}]));
 
 /**
  * Building catalogue for the bridge. zones: relative weights per ring around the city centre

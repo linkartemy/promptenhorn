@@ -221,6 +221,9 @@ function furnish(bp, rng, r, kind, keep = [], wood = 'spruce', o = {}) {
     guest: ['bed', 'chest', 'plant'],
   };
   for (const it of o.items ?? lists[kind] ?? lists.living) place(items[it]);
+  // Rooms are remembered for the props pass (decorate) that runs after the generator's own decisions.
+  if (!o.bare) (bp.rooms ??= []).push({ ...r, h, kind, wood, keep, stage: bp.stage });
+  if (o.bare) return 0;
   // Dining table with chairs (and table cloth) in the middle.
   const cx = (x1 + x2) >> 1;
   const cz = (z1 + z2) >> 1;

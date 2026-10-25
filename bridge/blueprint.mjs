@@ -36,7 +36,7 @@ export function rngFrom(seedText) {
 // Blocks that need support or attach to neighbours: placed in a second pass,
 // after every structural block, so nothing pops off while the house goes up.
 const DECOR =
-  /lantern|torch|flower_pot|potted_|_door\b|trapdoor|banner|sign|vine|leaves|carpet|button|lever|bell|candle|campfire|lightning_rod|chain|pressure_plate|_bed\b|cake|ladder|lily_pad|azalea\b|rose_bush|lilac|peony|sunflower|large_fern|tall_grass|short_grass|bush|petals|wildflowers|leaf_litter|wheat|carrots|potatoes|beetroots|sapling|snow\b|golem_statue|end_rod|_shelf\b|_bars\b|^minecraft:(poppy|dandelion|cornflower|oxeye_daisy|azure_bluet|allium|blue_orchid|red_tulip|white_tulip|pink_tulip|orange_tulip|lily_of_the_valley|fern|torchflower|water|daylight_detector|iron_bars)\b/;
+  /lantern|torch|flower_pot|potted_|_door\b|trapdoor|banner|sign|vine|leaves|carpet|button|lever|bell|candle|campfire|lightning_rod|chain|pressure_plate|_bed\b|cake|ladder|lily_pad|azalea\b|rose_bush|lilac|peony|sunflower|large_fern|tall_grass|short_grass|bush|petals|wildflowers|leaf_litter|wheat|carrots|potatoes|beetroots|sapling|snow\b|golem_statue|end_rod|tripwire_hook|_shelf\b|_bars\b|^minecraft:(poppy|dandelion|cornflower|oxeye_daisy|azure_bluet|allium|blue_orchid|red_tulip|white_tulip|pink_tulip|orange_tulip|lily_of_the_valley|fern|torchflower|water|daylight_detector|iron_bars)\b/;
 
 const CW_FACING = { north: 'east', east: 'south', south: 'west', west: 'north' };
 
@@ -158,11 +158,85 @@ export class Blueprint {
   constructor() {
     this.blocks = new Map();
     this.markers = [];
+    // Growth stages (docs/generator-contract.md §3). Every write is logged with the stage it belongs to
+    // ([stage, until]); `blocks` is the state of the last stage, atStage(n) replays the log up to stage n.
+    // Generators draw every stage in one pass (same rng use for all stages) and only switch `stage`.
+    this.stage = 1;
+    this.until = Infinity;
+    this.log = [];
+    this.mstages = [];
+    this.ever = new Set();
   }
 
   /** Semantic point for the bridge (seat, bed, door, light, bell, ...). Not part of the block list or its hash. */
   mark(kind, x, y, z, { facing, data } = {}) {
     this.markers.push({ kind, x, y, z, ...(facing ? { facing } : {}), ...(data ? { data } : {}) });
+    this.mstages.push([this.stage, this.until]);
+  }
+
+  /** Draws `fn()` as part of growth stage `stage` (blocks it sets appear from that stage on). */
+  atStageDraw(stage, fn) {
+    const prev = this.stage;
+    this.stage = stage;
+    try {
+      return fn();
+    } finally {
+      this.stage = prev;
+    }
+  }
+
+  /**
+   * Temporary blocks that exist only in stages from..to (a provisional roof of the small house, the bed in its
+   * Stube): `fn(view)` draws on a copy of stage `from`; what it changes is logged for those stages only and
+   * never reaches the final state.
+   */
+  overlay(from, to, fn) {
+    const view = this.atStage(from);
+    view.log = [];
+    view.mstages = [];
+    const m0 = view.markers.length;
+    fn(view);
+    for (const [k, b] of view.log) {
+      this.log.push([k, b, from, to]);
+      if (b != null) this.ever.add(k);
+    }
+    for (const m of view.markers.slice(m0)) {
+      this.markers.push(m);
+      this.mstages.push([from, to]);
+    }
+    return view;
+  }
+
+  /** The blueprint as it stands at growth stage n (blocks and markers). */
+  atStage(n) {
+    const out = new Blueprint();
+    for (const [k, b, s, u] of this.log) {
+      if (s > n || n > u) continue;
+      if (b == null) out.blocks.delete(k);
+      else out.blocks.set(k, b);
+    }
+    this.markers.forEach((m, i) => {
+      const [s, u] = this.mstages[i] ?? [1, Infinity];
+      if (s <= n && n <= u) {
+        out.markers.push(m);
+        out.mstages.push([1, Infinity]);
+      }
+    });
+    out.log = [...out.blocks].map(([k, b]) => [k, b, 1, Infinity]);
+    out.ever = new Set(out.blocks.keys());
+    return out;
+  }
+
+  /** Highest stage any block or marker of this blueprint belongs to. */
+  maxStage() {
+    let m = 1;
+    for (const e of this.log) if (e[3] === Infinity) m = Math.max(m, e[2]);
+    return m;
+  }
+
+  /** True if any stage ever has a block at this position (for placing extras without collisions). */
+  everSet(x, y, z) {
+    return this.ever.has(`${x},${y},${z}`);
   }
 
   /** Markers mapped like toBuildList: offset, rotation (facing turns with the blocks), optional clipping. */
@@ -183,8 +257,13 @@ export class Blueprint {
 
   set(x, y, z, block) {
     const key = `${x},${y},${z}`;
-    if (block == null) this.blocks.delete(key);
-    else this.blocks.set(key, ns(block));
+    const b = block == null ? null : ns(block);
+    if (this.until === Infinity) {
+      if (b == null) this.blocks.delete(key);
+      else this.blocks.set(key, b);
+    }
+    this.log.push([key, b, this.stage, this.until]);
+    if (b != null) this.ever.add(key);
   }
 
   get(x, y, z) {
@@ -198,12 +277,17 @@ export class Blueprint {
 
   /** Mirrors the whole blueprint in place across the plane x = axis / 2 (default: the plot centre line x = 8). */
   mirrorX(axis = 16) {
-    const next = new Map();
-    for (const [key, block] of this.blocks) {
+    const flip = (key) => {
       const [x, y, z] = key.split(',').map(Number);
-      next.set(`${axis - x},${y},${z}`, mirrorBlock(block));
-    }
+      return `${axis - x},${y},${z}`;
+    };
+    const next = new Map();
+    for (const [key, block] of this.blocks) next.set(flip(key), mirrorBlock(block));
     this.blocks = next;
+    const memo = new Map();
+    const mb = (b) => (b == null ? b : memo.get(b) ?? (memo.set(b, mirrorBlock(b)), memo.get(b)));
+    this.log = this.log.map(([k, b, s, u]) => [flip(k), mb(b), s, u]);
+    this.ever = new Set([...this.ever].map(flip));
     this.markers = this.markers.map((m) => ({ ...m, x: axis - m.x, ...(m.facing ? { facing: MIRROR_X[m.facing] ?? m.facing } : {}) }));
     return this;
   }

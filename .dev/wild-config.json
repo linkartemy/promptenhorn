@@ -1,0 +1,10 @@
+{
+  "port": 7785,
+  "serverDir": ".dev/wild-server",
+  "stateFile": ".dev/wild-state.json",
+  "heartbeatFile": ".dev/wild-heartbeat",
+  "maxColonists": 3,
+  "reserveFreeMB": 300,
+  "dev": true,
+  "spectators": ["link"]
+}

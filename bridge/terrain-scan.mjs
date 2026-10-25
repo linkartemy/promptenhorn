@@ -23,7 +23,7 @@ import { readChunkBuffer } from '../tools/lib/anvil.mjs';
 import { parseNBT } from '../tools/lib/nbt.mjs';
 
 export const PLOT = 21;
-const NONE = -32768;
+export const NONE = -32768;
 
 // ------------------------------------------------------------------ block categories
 
@@ -358,6 +358,15 @@ export class TerrainScanner {
       this.#loadRegion(rx, rz, list);
     }
     this.stats.ms += Date.now() - t0;
+  }
+
+  /** Chunks covering `r` that have no usable terrain yet (not generated, or below the `noise` status). */
+  unknownChunks(r) {
+    this.load(r);
+    const out = [];
+    for (let cx = r.x1 >> 4; cx <= r.x2 >> 4; cx++)
+      for (let cz = r.z1 >> 4; cz <= r.z2 >> 4; cz++) if (!this.cache.get(`${cx},${cz}`)?.summary?.valid) out.push([cx, cz]);
+    return out;
   }
 
   /** Per-column grid for a rect (inclusive block coords). Re-reads region headers, decodes changed chunks only. */
@@ -923,4 +932,48 @@ export function compareEarthworks(plan, cells) {
     adaptive.maxFill = Math.max(adaptive.maxFill, pl.maxFill ?? 0);
   }
   return { plots: order.length, today, adaptive };
+}
+
+/**
+ * Site score for a city centred on an arbitrary cell `center` (lower is better), the planner's version of
+ * siteScore: a buildable core, a lake or river (better than open sea) within reach, a harbour or quay site,
+ * and hills around the core for the terraced look (relief on the ring 3..8), but few cliffs in the core
+ * and no water in the very centre. Also returns the parts for logging.
+ */
+export function siteScoreAt(cells, [ci, cj] = [0, 0], { radius = 7 } = {}) {
+  let core = 0, coreBad = 0, terraced = 0, shore = 0, lake = 0, river = 0, ocean = 0, unknown = 0, total = 0, harbour = 0, cliffs = 0;
+  let hillRelief = 0, hillCells = 0;
+  for (const c of cells.values()) {
+    const r = Math.max(Math.abs(c.i - ci), Math.abs(c.j - cj));
+    if (r > radius) continue;
+    total++;
+    if (c.cls === 'unknown') unknown++;
+    if (r <= 2) {
+      if (c.use === 'level' || c.cls === 'flat' || (c.cls === 'gentle' && c.plan?.mode === 'level')) core++;
+      else if (['water', 'cliff', 'river_crossing', 'unknown'].includes(c.cls)) coreBad++;
+    }
+    if (['terrace2', 'terrace3', 'walkout', 'stilts'].includes(c.use)) terraced++;
+    if (c.cls === 'shoreline') shore++;
+    if (c.cls === 'cliff' && r <= 3) cliffs++;
+    if (c.cls === 'water' || c.cls === 'river_crossing' || c.cls === 'shoreline') {
+      if (c.waterType === 'lake') lake++;
+      else if (c.waterType === 'river') river++;
+      else if (c.waterType === 'ocean') ocean++;
+    }
+    if ((c.harbourScore ?? 0) >= 3) harbour++;
+    if (r >= 3 && r <= 8 && c.relief != null && !['water', 'unknown'].includes(c.cls)) {
+      hillRelief += Math.min(c.relief, 24);
+      hillCells++;
+    }
+  }
+  const centre = cells.get(`${ci},${cj}`);
+  const centreOk = centre && (centre.use === 'level' || centre.cls === 'flat' || centre.cls === 'gentle') && centre.cls !== 'water';
+  const hills = hillCells ? hillRelief / hillCells : 0; // mean relief of the cells around the core
+  const wet = lake + river + ocean;
+  const score =
+    -core * 2.5 + coreBad * 6 - Math.min(terraced, 20) * 0.5 - Math.min(shore, 16) * 1.0
+    - Math.min(lake, 12) * 1.2 - Math.min(river, 10) * 0.8 - Math.min(ocean, 10) * 0.3 - (wet ? 6 : 0)
+    - Math.min(harbour, 3) * 1.5 - Math.min(hills, 14) * 1.6 + cliffs * 1.5 + unknown * 3 + (centreOk ? 0 : 25)
+    + Math.max(0, wet - total * 0.4) * 1.2;
+  return { score: +score.toFixed(1), core, coreBad, terraced, shore, lake, river, ocean, harbour, hills: +hills.toFixed(1), cliffs, unknown, total };
 }

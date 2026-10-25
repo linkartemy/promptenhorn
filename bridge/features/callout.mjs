@@ -105,34 +105,57 @@ const callout = {
   },
 };
 
+// One combined yellow bar for every chat that waits for its next task (ten idle chats must not stack
+// ten bars on the screen): "Ждёт следующей задачи: A" / "Ждут задачу: A, B и ещё 3".
+const IDLE_BAR = 'alps:idle_all';
+let idleShown = null; // text currently on the bar (null = no bar)
+let idleNext = 0;
+let idlePlayersAt = 0;
+
+function idleText(ctx) {
+  const names = [];
+  for (const s of ctx.sessions()) {
+    const r = ctx.rt(s);
+    if (r.waiting && Date.now() - r.waiting.since > WAIT_MAX_MS) r.waiting = null;
+    if (r.waiting?.kind === 'idle' && !s.active) names.push(ctx.cleanText(s.name, 22));
+  }
+  if (!names.length) return null;
+  if (names.length === 1) return `Ждёт следующей задачи: ${names[0]}`;
+  const shown = names.slice(0, 2).join(', ');
+  return `Ждут задачу: ${shown}${names.length > 2 ? ` и ещё ${names.length - 2}` : ''}`;
+}
+
 const idleCallout = {
   id: 'idleCallout',
   group: 'Работа Claude',
   label: 'Жёлтая полоса «ждёт задачу»',
-  description: 'Чат закончил и ждёт твоего следующего сообщения: тихая жёлтая полоса без звука. Пропадает со следующим сообщением.',
+  description: 'Чаты, которые закончили и ждут твоего следующего сообщения: одна тихая жёлтая полоса на всех, без звука. Пропадает со следующим сообщением.',
   presets: [],
   async setup(ctx) {
-    await removeBars(ctx, 'idle_');
-    for (const s of ctx.sessions()) ctx.rt(s).idleBar = false;
+    await removeBars(ctx, 'idle_'); // also the per-chat bars of older versions
+    idleShown = null;
+    idleNext = 0;
   },
-  async onWork(ctx, s) {
-    const r = ctx.rt(s);
-    const w = r.waiting;
-    if (w && Date.now() - w.since > WAIT_MAX_MS) r.waiting = null;
-    const want = r.waiting?.kind === 'idle';
-    if (want === !!r.idleBar) return;
-    r.idleBar = want;
-    const id = barId(s, 'idle');
-    if (!want) return ctx.fx.push(`bossbar remove ${id}`, { key: `idlebar:${s.id}` });
-    const text = ctx.textJson(`Ждёт следующей задачи: ${s.name}`);
-    ctx.fx.push([`bossbar add ${id} ${text}`, `bossbar set ${id} color yellow`, `bossbar set ${id} style notched_6`, `bossbar set ${id} players @a`], { key: `idlebar:${s.id}` });
-  },
-  async onRetire(ctx, s) {
-    ctx.rt(s).idleBar = false;
-    await ctx.cmd(`bossbar remove ${barId(s, 'idle')}`);
+  onTick(ctx, now) {
+    if (now < idleNext) return;
+    idleNext = now + 1000;
+    const text = idleText(ctx);
+    if (text === idleShown) {
+      if (text && now - idlePlayersAt > 10000) {
+        idlePlayersAt = now; // players who joined meanwhile see the bar too
+        ctx.fx.push(`bossbar set ${IDLE_BAR} players @a`, { key: 'idlebar:players' });
+      }
+      return;
+    }
+    const had = idleShown;
+    idleShown = text;
+    idlePlayersAt = now;
+    if (!text) return ctx.fx.push(`bossbar remove ${IDLE_BAR}`, { key: 'idlebar' });
+    const json = ctx.textJson(text);
+    ctx.fx.push(had ? [`bossbar set ${IDLE_BAR} name ${json}`] : [`bossbar add ${IDLE_BAR} ${json}`, `bossbar set ${IDLE_BAR} name ${json}`, `bossbar set ${IDLE_BAR} color yellow`, `bossbar set ${IDLE_BAR} style notched_6`, `bossbar set ${IDLE_BAR} players @a`], { key: 'idlebar' });
   },
   async onDisable(ctx) {
-    for (const s of ctx.sessions()) ctx.rt(s).idleBar = false;
+    idleShown = null;
     await removeBars(ctx, 'idle_');
   },
 };

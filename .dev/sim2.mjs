@@ -8,11 +8,14 @@
 //   question id | idle id  Notification elicitation_dialog / idle_prompt
 //   agents id n [ms]       n subagents start, stop after ms
 //   compact id | limit id | plan id on|off | model id opus | stop id | end id
+//   agents id n          ids are agent0..agentN-1 (deterministic), so: agentstop id agent0
+//   web id | notify id permission_prompt|idle_prompt|… | prompt id text | burst id n (mixed tools, fast)
+// Env: ALPS_URL (bridge), ALPS_PROJECT (cwd project folder, default testproj).
 const URL = process.env.ALPS_URL || 'http://127.0.0.1:7778/event';
 const [scenario, ...args] = process.argv.slice(2);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sid = (id) => (id.length >= 12 ? id : `${id.padEnd(4, '0')}sim-${id}-0000`); // the first 8 chars name the builder
-const cwd = (project = 'testproj') => String.raw`C:\Users\linka\Desktop\projects` + '\\' + project;
+const cwd = (project = process.env.ALPS_PROJECT || 'testproj') => String.raw`C:\Users\linka\Desktop\projects` + '\\' + project;
 async function send(id, ev, project) {
   const body = { session_id: sid(id), cwd: cwd(project), t: Date.now(), ...ev };
   const res = await fetch(URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -63,13 +66,25 @@ switch (scenario) {
   case 'agents': {
     const n = Number(args[1] ?? 2);
     const types = ['Explore', 'Plan', 'general-purpose', 'Explore', 'Plan'];
-    for (let i = 0; i < n; i++) await send(args[0], { hook_event_name: 'SubagentStart', agent_id: `agent${i}x${Date.now() % 1000}`, agent_type: types[i % 5] });
+    for (let i = 0; i < n; i++) await send(args[0], { hook_event_name: 'SubagentStart', agent_id: `agent${i}`, agent_type: types[i % 5] });
     if (args[2]) {
       await sleep(Number(args[2]));
       // stop them again (ids are needed: re-list via /status is overkill for a dev tool, so stop by type order)
     }
     break;
   }
+  case 'web':
+    await tool(args[0], args[1] ?? 'WebSearch');
+    break;
+  case 'notify':
+    await send(args[0], { hook_event_name: 'Notification', ntype: args[1] ?? 'permission_prompt' });
+    break;
+  case 'prompt':
+    await send(args[0], { hook_event_name: 'UserPromptSubmit', prompt: args.slice(1).join(' ') || 'Задача' });
+    break;
+  case 'burst':
+    for (let k = 0; k < Number(args[1] ?? 20); k++) await tool(args[0], ['Edit', 'Read', 'Bash', 'Grep', 'Write'][k % 5]);
+    break;
   case 'agentstop':
     await send(args[0], { hook_event_name: 'SubagentStop', agent_id: args[1], agent_type: 'Explore' });
     break;
