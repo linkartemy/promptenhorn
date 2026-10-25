@@ -1,56 +1,56 @@
-# Дорожная карта Promptenhorn
+# Promptenhorn roadmap
 
-Состояние на 25.10.2026. Обозначения:
+Status as of 25.10.2026. Legend:
 
-- **готово** — проверено на тестовом сервере и входит в пресеты;
-- **за флагом** — код написан, но в мире целиком не проверен. Функция помечена «экспериментально», не входит ни в один пресет и включается только вручную (страница настроек или `node configure.mjs <id> on`);
-- **не начато**.
+- **done** — verified on the test server and included in presets;
+- **behind a flag** — code is written but not fully verified in the world. The feature is marked "experimental", is not part of any preset, and can only be enabled manually (settings page or `node configure.mjs <id> on`);
+- **not started**.
 
-Список проверенных функций задаётся в `bridge/features/index.mjs` (`TESTED`). Функция попадает в пресеты, когда её id добавлен туда после проверки.
+The list of verified features is defined in `bridge/features/index.mjs` (`TESTED`). A feature enters presets once its id is added there after verification.
 
-## Milestone 1 (готово)
+## Milestone 1 (done)
 
-| Что | Статус | Проверка |
+| What | Status | Verification |
 |---|---|---|
-| Версии генераторов: архив `bridge/archive/<версия>/`, `plot.gen`, `legacy.txt` для старых участков | готово | 20 из 20 участков живого `state.json` воспроизводятся архивом `live-2026-10-25` (`.dev/check-legacy.mjs`) |
-| Ремонт вместо сноса (`renovation`): дифф готовых домов, площадей, главной площади; улицы версионируются отдельно | готово, в пресетах | Тестовый город построен старыми генераторами и отремонтирован новыми: 0 расхождений в домах (`.dev/verify.mjs`). На площади квартала остаются только ступени швов между участками и трава, ставшая землёй под блоками |
-| Недостроенные дома при смене генераторов: дифф уже поставленного вместо сноса | готово, всегда | Отель и башня достроены после смены версии, 0 расхождений |
-| Миграция живого `state.json` (без `gen`, с демо-сессиями) | готово | Копия загружается, 4 недостроенных дома переводятся диффом, ремонт стартует |
-| Пресеты, переключатели, параметры; страница `http://127.0.0.1:7777/`, `configure.mjs`, живое применение | готово | API, CSRF (чужие Host/Origin, text/plain, cross-site → 403), перечитывание config.json |
-| Хук: только производные признаки, async, без вывода | готово | Команды, вывод, сообщения не уходят; 0,19 с на вызов |
-| `install-hooks.mjs`: новые события, async, идемпотентно, uninstall | готово | Прогон на копии settings.json: 13 записей после двух запусков, чужие hooks целы |
-| Очередь эффектов с бюджетом на тик и дедупом | готово | Используется ремонтом и функциями |
-| Жители без AI и лимит на квартал (нагрузка на тики) | готово, всегда | `villagerAI: true` в config.json возвращает старое поведение |
-| Запись хроники в state (кто, когда, сколько работал, действия по категориям) | готово, всегда | Только данные, в мир ничего не пишется |
+| Generator versions: archive `bridge/archive/<version>/`, `plot.gen`, `legacy.txt` for old plots | done | 20 of 20 plots of the live `state.json` are reproduced by the `live-2026-10-25` archive (`.dev/check-legacy.mjs`) |
+| Renovation instead of demolition (`renovation`): diff of finished houses, squares, the main square; streets are versioned separately | done, in presets | A test town was built with the old generators and renovated with the new ones: 0 mismatches in houses (`.dev/verify.mjs`). On the district square only the seam steps between plots remain, plus grass that turned into dirt under blocks |
+| Unfinished houses on generator change: diff of what is already placed instead of demolition | done, always | Hotel and tower were completed after the version change, 0 mismatches |
+| Migration of the live `state.json` (no `gen`, with demo sessions) | done | The copy loads, 4 unfinished houses are converted via diff, renovation starts |
+| Presets, toggles, parameters; page `http://127.0.0.1:7777/`, `configure.mjs`, live apply | done | API, CSRF (foreign Host/Origin, text/plain, cross-site → 403), re-reading config.json |
+| Hook: derived signals only, async, no output | done | Commands, output, messages are not sent; 0.19 s per call |
+| `install-hooks.mjs`: new events, async, idempotent, uninstall | done | Run on a copy of settings.json: 13 entries after two runs, other hooks intact |
+| Effect queue with a per-tick budget and dedup | done | Used by renovation and features |
+| Villagers without AI and a per-district limit (tick load) | done, always | `villagerAI: true` in config.json restores the old behavior |
+| Chronicle recording in state (who, when, how long they worked, actions by category) | done, always | Data only, nothing is written to the world |
 
-## За флагом (написано, ждёт проверки в мире)
+## Behind a flag (written, awaiting in-world verification)
 
-Следующий шаг для каждой: включить на тестовом сервере (`node configure.mjs <id> on` при `ALPS_CONFIG=.dev/test-config.json`), прогнать сценарий `.dev/sim2.mjs`, проверить RCON-запросами и картой, добавить id в `TESTED`.
+Next step for each: enable on the test server (`node configure.mjs <id> on` with `ALPS_CONFIG=.dev/test-config.json`), run the `.dev/sim2.mjs` scenario, verify via RCON queries and the map, add the id to `TESTED`.
 
-| id | Идея | Что проверить |
+| id | Idea | What to verify |
 |---|---|---|
-| `callout`, `idleCallout` | 1 | `sim2 wait c0 8000`, `question`, `idle`: «!» едет на строителе, bossbar появляется и исчезает, пауза стройки |
-| `status`, `toolInHand` | 23, 7 | Описание под ником меняется только при смене текста; предмет по категории инструмента |
-| `tests`, `commits`, `push`, `pr` | 2, 3, 4, 5 | Флажок на фонаре, тучка после 3 падений, колокол церкви, маршрут автобуса по улицам, флаг кантона на флагштоке площади |
-| `apprentices` | 6 | Манекены scale 0.6, не больше 4, исчезают на SubagentStop и при переходе строителя |
-| `realTime`, `windows`, `chimney` | 14, 12, 13 | `advance_time false`, свет только у работающего дома, костёр-труба |
-| `advancements` | 18 | Датапак ставится сам (проверено: включается), гранты при входе игрока |
-| `chronicle`, `chronicleWithPrompt` | 22 + летопись | Кафедра у двери, клик по зоне у двери, `/trigger chronicle`, раздел «Летопись города» на странице |
-| `economy` | экономика чатов | Малые формы на площади и в парке проверены (0 расхождений). Не проверены: этапы дома, общественные работы (церковь/башня/кафе для квартала), лес на склонах, смотровая на вершине (нужен опрос вершин) |
-| `allay`, `compact`, `storm`, `planMode` | 8, 9, 10, 11 | Полёт аллея на «транспорте», перекур, гроза и молнии только по вершинам, контур плана |
-| `professions`, `scaffolding`, `alphorn`, `quirks` | 16, 17, 27, 30 | Профессии и животные фермы, леса по углам и их снятие, рог, TNT/каска/упавший инструмент |
-| `townRank`, `francs`, `matterhorn` | 19, 20, 21 | Титр и памятник, табло «Kasse», флаг и кольца фонарей на вершине |
-| `townHall`, `locatorBar`, `whileAway` | 24, 25, 26 | Диалог с телепортами (кнопка в меню паузы появляется только после перезапуска сервера: диалоги — статический реестр), цвет точки на locator bar (видна ли в creative — проверить клиентом), сводка при входе |
-| `clockBells`, `sbbClock`, `holidays` | 15, 29, 28 | Бой часов и медвежата, стрелки SBB (проверить кватернионы на всех четырёх сторонах), 1 августа / Рождество через `debugClockOffsetMinutes` |
+| `callout`, `idleCallout` | 1 | `sim2 wait c0 8000`, `question`, `idle`: the "!" rides on the builder, the bossbar appears and disappears, construction pauses |
+| `status`, `toolInHand` | 23, 7 | The text under the nametag changes only when the text changes; held item matches the tool category |
+| `tests`, `commits`, `push`, `pr` | 2, 3, 4, 5 | Flag on the lamppost, a little cloud after 3 failures, the church bell, the bus route along the streets, the canton flag on the square's flagpole |
+| `apprentices` | 6 | Mannequins at scale 0.6, no more than 4, disappear on SubagentStop and when the builder moves |
+| `realTime`, `windows`, `chimney` | 14, 12, 13 | `advance_time false`, light only in the house being worked on, campfire chimney |
+| `advancements` | 18 | The datapack installs itself (verified: it enables), grants on player join |
+| `chronicle`, `chronicleWithPrompt` | 22 + chronicle | Lectern by the door, click on the zone by the door, `/trigger chronicle`, the "Town chronicle" section on the page |
+| `economy` | chat economy | Small forms on the square and in the park verified (0 mismatches). Not verified: house stages, public works (church/tower/café for the district), forest on slopes, lookout on the summit (needs summit polling) |
+| `allay`, `compact`, `storm`, `planMode` | 8, 9, 10, 11 | Allay flight on "transport", smoke break, thunderstorm and lightning on summits only, plan outline |
+| `professions`, `scaffolding`, `alphorn`, `quirks` | 16, 17, 27, 30 | Professions and farm animals, scaffolding at the corners and its removal, the horn, TNT/hard hat/dropped tool |
+| `townRank`, `francs`, `matterhorn` | 19, 20, 21 | Title and monument, the "Kasse" board, flag and lantern rings on the summit |
+| `townHall`, `locatorBar`, `whileAway` | 24, 25, 26 | Dialog with teleports (the pause-menu button appears only after a server restart: dialogs are a static registry), dot color on the locator bar (whether it is visible in creative — check with a client), summary on join |
+| `clockBells`, `sbbClock`, `holidays` | 15, 29, 28 | Clock chimes and bear cubs, SBB hands (check the quaternions on all four sides), 1 August / Christmas via `debugClockOffsetMinutes` |
 
-## Не начато
+## Not started
 
-- **Этапы домов в генераторах и маркеры** — на стороне генераторов, контракт описан в `docs/generator-contract.md` (`STAGES`, `generate(type, seed, {stage})`, `bp.mark()/toMarkerList()`). Мост уже просит этапы и умеет запасной вариант (двор этапа 3).
-- **Жизнь города**: жители с распорядком (кровати, рабочие места, колокола из маркеров), сидящие люди (кафе днём, церковь по воскресеньям, Stube), одежда строителей, сон в своей кровати и «Feierabend» в кафе, животные по местам (пастбище, кошка, сенбернар, пчёлы, рыбы, лягушки, кролики), канатная дорога, поезд, парапланы, лодки. Нужны маркеры от генераторов, настройка плотности (низкая/средняя/высокая) и строгие лимиты сущностей. Хук `replacesVillager` в мосту уже есть, чтобы заменить нынешнего жителя у двери.
+- **House stages in generators and markers** — on the generator side; the contract is described in `docs/generator-contract.md` (`STAGES`, `generate(type, seed, {stage})`, `bp.mark()/toMarkerList()`). The bridge already requests stages and has a fallback (stage 3 yard).
+- **Town life**: villagers with daily routines (beds, workplaces, bells from markers), seated people (café by day, church on Sundays, Stube), builder outfits, sleeping in their own bed and "Feierabend" at the café, animals in their places (pasture, cat, St. Bernard, bees, fish, frogs, rabbits), cable car, train, paragliders, boats. Requires markers from generators, a density setting (low/medium/high), and strict entity limits. The bridge already has a `replacesVillager` hook to replace the current villager by the door.
 
-## Известные мелочи
+## Known minor issues
 
-- Ремонт идёт, пока работает хоть один чат (2 блока/с, настраивается) или рядом есть бодрствующий свободный строитель квартала. Ночью без чатов он ждёт.
-- Швы между участками разной высоты кладут ступени на первые ряды улицы соседа; если генератор площади ставит туда траву, блоки расходятся с чертежом. Это было и до ремонта.
-- Компостер на главной площади (`level=7`) сам переходит в `level=8`, один забор в таунхаусе меняет соединение после соседних блоков. Это вопросы к генераторам.
-- В логах Paper бывают «Failed to encode value 'DYING'» для манекенов, убитых в выгружающемся чанке. Мост держит чанки 4 с после убийства, но старые трупы из прошлых версий остаются.
+- Renovation runs while at least one chat is active (2 blocks/s, configurable) or there is an awake idle district builder nearby. At night with no chats it waits.
+- Seams between plots of different heights place steps on the first rows of the neighbor's street; if the square generator puts grass there, the blocks diverge from the blueprint. This was already the case before renovation.
+- The composter on the main square (`level=7`) switches to `level=8` on its own, and one fence in the townhouse changes its connection after neighboring blocks are placed. These are questions for the generators.
+- Paper logs sometimes show "Failed to encode value 'DYING'" for mannequins killed in an unloading chunk. The bridge keeps chunks loaded for 4 s after a kill, but old corpses from previous versions remain.

@@ -1,0 +1,3 @@
+# i18n → terrain
+
+`bridge/city.mjs`: `labelOf()` still returns Russian ('Площадь', 'Площадь квартала', DEFAULT_CATALOG labels). The bridge now shows building types through `building.<type>` keys (all 9 languages, incl. `building.square`, `building.plaza`, `building.park`) and only falls back to `labelOf()`, so nothing is broken — but please switch those inline fallbacks to English ('Main square', 'District square', 'Old-town house', 'Church', 'Grand Hotel', 'Modern house', 'Chalet'). New user-visible strings in `bridge/infra.mjs` etc.: `t()` + keys in `locales/en.json` and `ru.json` (see `docs/i18n.md`).

@@ -1,81 +1,81 @@
-# Строительные нормы Promptenhorn
+# Promptenhorn Building Standards
 
-Требования к процедурным зданиям. Цель: дома выглядят красиво снаружи и правдоподобно изнутри. По ним можно ходить и в них можно «жить». Каждое требование либо проверяется автоматически (**[авто]**), либо входит в чек-лист ревью по превью (**[ревью]**).
+Requirements for procedural buildings. Goal: houses look good from the outside and believable on the inside. You can walk through them and "live" in them. Every requirement is either checked automatically (**[auto]**) or is part of the preview review checklist (**[review]**).
 
-## 1. Технические гарантии
+## 1. Technical guarantees
 
-| # | Требование | Проверка |
+| # | Requirement | Check |
 |---|---|---|
-| 1.1 | Все блоки и их свойства существуют в 1.21.11 | **[авто]** `node tools/validate-blocks.mjs` |
-| 1.2 | При постройке через мост ничего не отваливается и не пропадает | **[авто]** `.dev/ingame-check.mjs`: 0 ошибок |
-| 1.3 | Здание не выходит за участок 0..16 (кроме площадей) | **[авто]** validate-blocks |
-| 1.4 | Стеклянные панели, решётки, заборы и стены соединены с соседями так же, как если бы их поставил игрок | **[авто]** in-game: проверка состояний `execute if block … [east=true…]` |
-| 1.5 | Детерминированность: одинаковый seed даёт одинаковое здание | **[авто]** хэш чертежа стабилен |
-| 1.6 | Размер 700–3500 блоков (5–20 минут работы чата) | **[авто]** `.dev/stats.mjs` |
+| 1.1 | All blocks and their properties exist in 1.21.11 | **[auto]** `node tools/validate-blocks.mjs` |
+| 1.2 | When built through the bridge, nothing breaks off or disappears | **[auto]** `.dev/ingame-check.mjs`: 0 errors |
+| 1.3 | The building stays within the 0..16 plot (except squares) | **[auto]** validate-blocks |
+| 1.4 | Glass panes, iron bars, fences and walls connect to their neighbors the same way as if a player had placed them | **[auto]** in-game: state check `execute if block … [east=true…]` |
+| 1.5 | Determinism: the same seed produces the same building | **[auto]** blueprint hash is stable |
+| 1.6 | Size 700–3500 blocks (5–20 minutes of chat work) | **[auto]** `.dev/stats.mjs` |
 
-## 2. Проходимость
+## 2. Walkability
 
-Проверяется `tools/walkcheck.mjs`: BFS игрока от улицы перед участком. Ростом игрок 2 блока; ходит по горизонтали, поднимается на 1 блок по ступеням, слэбам или прыжком, спускается до 3 блоков, лезет по лестницам-ладдерам; двери проходимы.
+Checked by `tools/walkcheck.mjs`: a player BFS starting from the street in front of the plot. The player is 2 blocks tall; walks horizontally, climbs 1 block via stairs, slabs or a jump, drops down up to 3 blocks, climbs ladders; doors are passable.
 
-| # | Требование | Проверка |
+| # | Requirement | Check |
 |---|---|---|
-| 2.1 | Каждый этаж жилой или публичной части достижим с улицы | **[авто]** 100% этажей |
-| 2.2 | ≥ 95% внутренней площади пола достижимо (мебель не перекрывает проходы) | **[авто]** |
-| 2.3 | Вход: дверь, к которой ведёт дорожка, перед ней ступенька или крыльцо | **[авто]** дверь достижима + **[ревью]** |
-| 2.4 | Между этажами настоящая лестница: ступени с площадкой либо прямой марш. Ладдер допустим только в башнях, на чердаках и в техпомещениях | **[авто]** тип перехода + **[ревью]** |
-| 2.5 | Проходы шириной ≥ 1 блок в домах и ≥ 2 в публичных зданиях (отель, церковь, кафе) | **[авто]** |
-| 2.6 | Чистая высота помещений ≥ 2 блоков везде, ≥ 3 в залах (холл отеля, неф церкви, зал кафе) | **[авто]** |
+| 2.1 | Every floor of the residential or public part is reachable from the street | **[auto]** 100% of floors |
+| 2.2 | ≥ 95% of the interior floor area is reachable (furniture does not block passages) | **[auto]** |
+| 2.3 | Entrance: a door reached by a path, with a step or porch in front of it | **[auto]** door reachable + **[review]** |
+| 2.4 | A real staircase between floors: stairs with a landing or a straight flight. A ladder is allowed only in towers, attics and utility rooms | **[auto]** transition type + **[review]** |
+| 2.5 | Passages ≥ 1 block wide in houses and ≥ 2 in public buildings (hotel, church, café) | **[auto]** |
+| 2.6 | Clear room height ≥ 2 blocks everywhere, ≥ 3 in halls (hotel lobby, church nave, café hall) | **[auto]** |
 
-## 3. Пригодность для жизни
+## 3. Livability
 
-Минимальный набор для каждого жилого здания. Блоки ставятся по смыслу, рядом друг с другом, а не разбросаны.
+The minimum set for every residential building. Blocks are placed meaningfully, next to each other, not scattered.
 
-| # | Помещение | Что в нём должно быть |
+| # | Room | What it must contain |
 |---|---|---|
-| 3.1 | Кухня | Плита (smoker, furnace или кафельная печь из блоков), мойка (cauldron), столешница (бочки или верстак), свет |
-| 3.2 | Столовая / Stube | Стол со стульями (ступени-стулья), в шале и старых домах кафельная печь (Kachelofen) |
-| 3.3 | Спальня | Кровать из двух половин, тумба или сундук, окно, свет |
-| 3.4 | Санузел | Хотя бы намёк: cauldron с водой, кварцевые блоки и люки, светлая плитка |
-| 3.5 | Хранение | Сундук, бочки или шкаф |
-| 3.6 | Свет | В каждой комнате источник света, видимый ночью снаружи через окна |
-| 3.7 | Окна | Окно в каждой жилой комнате, кроме кладовой и санузла |
+| 3.1 | Kitchen | Stove (smoker, furnace or a tiled stove built from blocks), sink (cauldron), countertop (barrels or a crafting table), light |
+| 3.2 | Dining room / Stube | Table with chairs (stair chairs); in chalets and old houses, a tiled stove (Kachelofen) |
+| 3.3 | Bedroom | Two-part bed, nightstand or chest, window, light |
+| 3.4 | Bathroom | At least a hint: water cauldron, quartz blocks and trapdoors, light-colored tiles |
+| 3.5 | Storage | Chest, barrels or a cupboard |
+| 3.6 | Light | A light source in every room, visible from outside through the windows at night |
+| 3.7 | Windows | A window in every habitable room except the pantry and bathroom |
 
-Проверка: **[авто]** наличие ключевых блоков в каждой «квартире» (кухонный, спальный и световой маркеры на каждом жилом этаже) и **[ревью]** по поэтажным срезам.
+Check: **[auto]** presence of key blocks in every "apartment" (kitchen, bedroom and light markers on every residential floor) and **[review]** of the floor-by-floor slices.
 
-## 4. Размеры и пропорции
+## 4. Dimensions and proportions
 
-| # | Требование | Проверка |
+| # | Requirement | Check |
 |---|---|---|
-| 4.1 | Полезная площадь жилого этажа ≥ 6×6, у дома ≥ 2 жилых этажа (кроме хижины и фермы, где жильё плюс амбар) | **[авто]** |
-| 4.2 | Этаж = перекрытие + 2–3 блока высоты. Первый этаж публичных зданий выше | **[авто]** |
-| 4.3 | Крыша полностью накрывает план, свесы 1–2 блока, кровля без дыр | **[авто]** нет неба над полом + **[ревью]** |
-| 4.4 | Труба стоит над печью или камином | **[ревью]** |
-| 4.5 | Пятно застройки использует участок: дом занимает ≥ 35% площади 17×17, остальное двор, сад, терраса | **[авто]** |
-| 4.6 | Фасад читается: цоколь, этажи, карниз, крыша. Окна стоят по сетке | **[ревью]** |
+| 4.1 | Usable area of a residential floor ≥ 6×6; a house has ≥ 2 residential floors (except the hut and the farm, which are living quarters plus a barn) | **[auto]** |
+| 4.2 | Floor = floor slab + 2–3 blocks of height. The ground floor of public buildings is taller | **[auto]** |
+| 4.3 | The roof fully covers the plan, overhangs of 1–2 blocks, roofing without holes | **[auto]** no sky above any floor + **[review]** |
+| 4.4 | The chimney sits above a stove or fireplace | **[review]** |
+| 4.5 | The building footprint makes use of the plot: the house covers ≥ 35% of the 17×17 area, the rest is yard, garden, terrace | **[auto]** |
+| 4.6 | The facade reads clearly: plinth, floors, cornice, roof. Windows follow a grid | **[review]** |
 
-## 5. Типология
+## 5. Typology
 
-| Тип | Обязательные элементы |
+| Type | Required elements |
 |---|---|
-| Шале | Каменный цоколь, деревянные этажи, Stube с кафельной печью, балкон с геранями, широкий свес крыши |
-| Дом старого города | Аркады или лавка на первом этаже, лестничная клетка, квартира на каждом этаже, мансарда |
-| Кафе | Прилавок, витрина с выпечкой, 3+ столика внутри и терраса, квартира хозяина наверху |
-| Церковь | Неф со скамьями и центральным проходом, алтарь, башня доступна до колокола |
-| Часовая башня | Проход-арка, лестница или ладдер до циферблата и колокола |
-| Гранд-отель | Лобби с ресепшеном, лестница на все этажи, коридор с номерами (кровать в каждом), ресторан |
-| Современный дом | Открытая гостиная-кухня, лестница, спальня наверху, терраса |
-| Кооперативный дом | Лестничная клетка, квартира на каждом этаже, балконы |
-| Ферма | Жилая часть (кухня, Stube, спальня) и амбар с сеном и стойлами |
-| Хижина | Общая комната с длинными столами, спальня с двухъярусными кроватями |
+| Chalet | Stone plinth, timber upper floors, Stube with a tiled stove, balcony with geraniums, wide roof overhang |
+| Old-town house | Arcades or a shop on the ground floor, stairwell, an apartment on every floor, attic (mansard) |
+| Café | Counter, pastry display case, 3+ tables inside plus a terrace, owner's apartment upstairs |
+| Church | Nave with pews and a central aisle, altar, tower accessible up to the bell |
+| Clock tower | Archway passage, stairs or ladder up to the clock face and the bell |
+| Grand hotel | Lobby with a reception desk, stairs to all floors, corridor with guest rooms (a bed in each), restaurant |
+| Modern house | Open-plan living room and kitchen, stairs, bedroom upstairs, terrace |
+| Cooperative housing block | Stairwell, an apartment on every floor, balconies |
+| Farm | Living quarters (kitchen, Stube, bedroom) and a barn with hay and stalls |
+| Hut | Common room with long tables, dormitory with bunk beds |
 
-## 6. Красота
+## 6. Beauty
 
-- Палитры варьируются по seed, но остаются в швейцарском духе: дерево, штукатурка, камень, медь, красная черепица.
-- Детали: ставни, ящики с геранями, наличники, кронштейны, флаги. Одинаковые дома не стоят рядом (зеркалирование, варианты).
-- Интерьер уютный: дерево, ковры, свет. Ночью окна светятся.
-- **[ревью]** Превью экстерьера и поэтажные срезы каждого типа просматриваются глазами перед выкаткой.
+- Palettes vary by seed but stay in a Swiss spirit: wood, plaster, stone, copper, red roof tiles.
+- Details: shutters, geranium window boxes, window surrounds, brackets, flags. Identical houses never stand next to each other (mirroring, variants).
+- The interior is cozy: wood, carpets, light. Windows glow at night.
+- **[review]** The exterior preview and the floor-by-floor slices of every type are inspected by eye before rollout.
 
-## Как проверять
+## How to check
 
 ```bash
 node tools/validate-blocks.mjs
@@ -84,4 +84,4 @@ node .dev/ingame-check.mjs
 node .dev/stats.mjs
 ```
 
-Всё должно проходить без ошибок перед выкаткой на живой сервер.
+Everything must pass without errors before rollout to the live server.

@@ -1,348 +1,348 @@
-# Город по рельефу: горы, озёра, реки, море
+# A terrain-following town: mountains, lakes, rivers, sea
 
-Дизайн и прототип. Город перестаёт срезать горы и засыпать воду. Он садится на склон террасами, а к воде выходит набережной, пляжем, пирсами, гаванью и мостами.
+Design and prototype. The town stops cutting down mountains and filling in water. It settles onto slopes in terraces and meets the water with a promenade, a beach, piers, a harbour and bridges.
 
-Прототип (существующий код не менялся):
+Prototype (existing code was not changed):
 
-| Файл | Что это |
+| File | What it is |
 |---|---|
-| `bridge/terrain-scan.mjs` | Анализ рельефа прямо из region-файлов: колонки → ячейки 21×21 → классы, планы платформ, гавани, оценка места, симуляция роста |
-| `tools/terrain-report.mjs` | CLI: PNG-оверлей (`--view cells|slope|plan`) и статистика |
-| `docs/terrain-adaptive/*.png` | Картинки ниже |
+| `bridge/terrain-scan.mjs` | Terrain analysis straight from region files: columns → 21×21 cells → classes, platform plans, harbours, site scoring, growth simulation |
+| `tools/terrain-report.mjs` | CLI: PNG overlay (`--view cells|slope|plan`) and statistics |
+| `docs/terrain-adaptive/*.png` | The images below |
 
 ```
 node tools/terrain-report.mjs --world .dev/test-server/world --rect 5850,-6650,6350,-6150 --origin 6096,-6412
 node tools/terrain-report.mjs --world .dev/test-server/world --rect 5890,-5640,6330,-5240 --origin 6096,-5463 --view plan --plots 70
 ```
 
-## 0. Ключевые решения
+## 0. Key decisions
 
-1. **Рельеф читаем с диска, а не пробами.** Region-файлы дают каждую колонку (высота земли без деревьев и травы, вода и её глубина, биом, материал), а не 9 точек spreadplayers на участок. Область 500×500 (1024 чанка) читается за ≈0,5 с, повтор с кэшем ≈40 мс.
-2. **Бюджет земляных работ: не больше 3 блоков срезки или подсыпки на колонку внутри участка.** Что не влезает в бюджет, строится иначе: две-три террасы, дом с цокольным этажом (walk-out), дом на сваях. Если и это не подходит, ячейка остаётся природой.
-3. **Воду не засыпаем никогда.** Ячейки воды не выделяются под дома. Береговые ячейки становятся набережной, пляжем, причалом или гаванью, водные перед ними — пирсами. Река получает мост.
-4. **Высоту участка больше не прижимаем к соседям (±1) и к baseY (±12).** Разницу высот между соседними участками решает шов по величине перепада: ступень, лестница с подпорной стенкой, Treppengasse или отсутствие прямой связи.
-5. **Сетку 21×21 и районы сохраняем** (путь минимальных изменений). Меняются стоимость ячейки в `nextCell`, высота участка, подготовка участка и швы. Контурные кварталы откладываем.
-6. **Место для города выбираем с водой и склонами**, швейцарский вид: озеро или река рядом с центром, холмы вокруг, ровное ядро.
-7. **Существующие города не перестраиваем.** Новые правила действуют только для новых участков. Ремонт добавляет к старым участкам набережные и причалы, ничего не снося.
+1. **Terrain is read from disk, not probed.** Region files give every column (ground height without trees and grass, water and its depth, biome, material) instead of 9 spreadplayers points per plot. A 500×500 area (1024 chunks) is read in ≈0.5 s, a cached repeat in ≈40 ms.
+2. **Earthwork budget: no more than 3 blocks of cut or fill per column inside a plot.** Whatever does not fit the budget is built differently: two or three terraces, a house with a walk-out basement, a house on stilts. If none of that fits, the cell stays as nature.
+3. **Water is never filled in.** Water cells are not allocated for houses. Shore cells become a promenade, a beach, a jetty or a harbour; the water cells in front of them become piers. A river gets a bridge.
+4. **Plot height is no longer clamped to the neighbors (±1) and to baseY (±12).** The height difference between adjacent plots is resolved by a seam chosen by the size of the drop: a step, a staircase with a retaining wall, a Treppengasse, or no direct connection.
+5. **The 21×21 grid and the districts are kept** (minimal-change path). What changes is the cell cost in `nextCell`, the plot height, plot preparation and the seams. Contour-following districts are postponed.
+6. **The town site is chosen with water and slopes**, for a Swiss look: a lake or river near the center, hills around, a flat core.
+7. **Existing towns are not rebuilt.** The new rules apply to new plots only. Renovation adds promenades and jetties to old plots without demolishing anything.
 
-## 1. Почему сейчас гора пропадает, а море засыпается
+## 1. Why the mountain currently disappears and the sea gets filled in
 
-| Где | Что делает | Эффект |
+| Where | What it does | Effect |
 |---|---|---|
-| `bridge.mjs plotGround` | высота = низкая проба, затем кламп **±1 к соседям** и **±12 к baseY** | на склоне участок прижат к уровню соседей, вершина срезается |
-| `terrain.mjs preparePlot` | `clearAir` от y+1 до max(y+40, top+8) на участке; террасы 1:1 на **8 блоков** вокруг, всё выше режется | склон срезается и вокруг участка |
-| `preparePlot` | `fill … dirt/grass_block replace #minecraft:replaceable` под участком и в террасах | вода входит в `#replaceable`, поэтому море и озёра **засыпаются** |
-| `preparePlot` | деревья вычищаются на 8 блоков вокруг | лес отступает от каждого участка |
-| `city.mjs nextCell` | выбирает только по расстоянию до центра и площади | не знает ни склонов, ни воды |
-| `terrain.mjs findValley` | `water * 25` в штрафе | озёра и реки избегаются, хотя именно они дают швейцарский вид |
+| `bridge.mjs plotGround` | height = low probe, then clamp to **±1 of neighbors** and **±12 of baseY** | on a slope the plot is pinned to the neighbors' level, the summit is cut off |
+| `terrain.mjs preparePlot` | `clearAir` from y+1 to max(y+40, top+8) over the plot; 1:1 terraces **8 blocks** around, everything above is cut | the slope is cut around the plot as well |
+| `preparePlot` | `fill … dirt/grass_block replace #minecraft:replaceable` under the plot and in the terraces | water is part of `#replaceable`, so sea and lakes **get filled in** |
+| `preparePlot` | trees are cleared 8 blocks around | the forest retreats from every plot |
+| `city.mjs nextCell` | chooses only by distance to the center and the square | knows nothing about slopes or water |
+| `terrain.mjs findValley` | `water * 25` in the penalty | lakes and rivers are avoided, even though they are exactly what gives the Swiss look |
 
-Восточный край тестового города (x≈6215..6300, z≈-6450..-6355): газонные откосы 1:1 уходят прямо в море, нет ни пляжа, ни стенки набережной.
+The eastern edge of the test town (x≈6215..6300, z≈-6450..-6355): 1:1 lawn embankments run straight into the sea, with neither a beach nor a promenade wall.
 
-![Восточный край тестового города](terrain-adaptive/test-city-east-edge-iso.png)
+![Eastern edge of the test town](terrain-adaptive/test-city-east-edge-iso.png)
 
-Цифры из симуляции на долине реки (70 участков, считается только внутренность лота 17×17, апрон в 8 блоков вокруг не учтён):
+Numbers from the simulation on the river valley (70 plots, only the interior of the 17×17 lot is counted, the 8-block apron around it is not included):
 
-| | срезка | подсыпка | макс. срезка | макс. подсыпка |
+| | cut | fill | max cut | max fill |
 |---|---|---|---|---|
-| сегодняшнее правило (±1 к соседям, ±12 к базе) | 382 317 | 42 | 42 | 1 |
-| адаптивные планы | 10 522 | 14 436 | 8 | 3 |
+| current rule (±1 to neighbors, ±12 to base) | 382 317 | 42 | 42 | 1 |
+| adaptive plans | 10 522 | 14 436 | 8 | 3 |
 
-## 2. Скан рельефа (`bridge/terrain-scan.mjs`)
+## 2. Terrain scan (`bridge/terrain-scan.mjs`)
 
-### 2.1 Колонка
+### 2.1 Column
 
-`TerrainScanner(worldDir).scan(rect)` даёт массивы на каждую колонку:
+`TerrainScanner(worldDir).scan(rect)` returns per-column arrays:
 
-- `ground`: высота природной земли. Пропускаются листва и брёвна (дерево — это флаг `TREE`, а не земля), трава, цветы, снежный слой, лианы. Наша мостовая лежит на земле и считается поверхностью, крыши и стены домов — нет (флаг `BUILT`).
-- `water` и `depth`: уровень воды и число водных блоков (вода, водоросли, пузырьковый столб; лёд над водой даёт флаг `FROZEN`).
-- `canopy`: верх дерева. `kind`: материал (`grass`, `sand`, `stone`, `snow`, `built` и т. д.). `biome`: биом на уровне поверхности, из `sections[].biomes`.
-- `flags`: `PROTO`, если чанк ещё не `full`; `NO_TREES_YET`, если статус ниже `features`.
+- `ground`: natural ground height. Leaves and logs (a tree is the `TREE` flag, not ground), grass, flowers, snow layers and vines are skipped. Our pavement lies on the ground and counts as surface; house roofs and walls do not (flag `BUILT`).
+- `water` and `depth`: water level and the number of water blocks (water, seagrass/kelp, bubble column; ice over water sets the `FROZEN` flag).
+- `canopy`: top of the tree. `kind`: material (`grass`, `sand`, `stone`, `snow`, `built`, etc.). `biome`: biome at surface level, from `sections[].biomes`.
+- `flags`: `PROTO` if the chunk is not yet `full`; `NO_TREES_YET` if its status is below `features`.
 
-Производные данные строит `analyze(grid)`:
+Derived data is built by `analyze(grid)`:
 
-- `slope`: градиент по поверхности, сглаженной окном 3×3.
-- `step`: наибольший перепад до соседа по 4 направлениям; обрыв ≥3.
-- Водоёмы: 4-связные компоненты. Тип: `ocean` при ≥30% океанских биомов, `river` при ≥30% речных, `swamp` при ≥50% болотных, иначе `lake` (больше 80 колонок) или `pond`. Тип отдельной колонки сначала берётся из её биома, поэтому устье остаётся морем, а река рекой.
-- `shore`: расстояние от суши до воды. `offshore`: расстояние от воды до берега, половина ширины водоёма.
-- Вода в наших собственных блоках (фонтан на площади) водоёмом не считается.
+- `slope`: gradient over the surface smoothed with a 3×3 window.
+- `step`: the largest drop to a neighbor in the 4 directions; a cliff is ≥3.
+- Water bodies: 4-connected components. Type: `ocean` at ≥30% ocean biomes, `river` at ≥30% river biomes, `swamp` at ≥50% swamp biomes, otherwise `lake` (more than 80 columns) or `pond`. The type of an individual column is taken from its biome first, so an estuary stays sea and a river stays river.
+- `shore`: distance from land to water. `offshore`: distance from water to the shore, half the width of the water body.
+- Water in our own blocks (the fountain on the square) does not count as a water body.
 
-**Надёжность при работающем сервере.** Читаются только заголовок региона (8 КиБ) и секторы нужных чанков, без `readFileSync` всего `.mca`. Битый чанк перечитывается до трёх раз с паузой 40–120 мс. Если не вышло, берётся последняя удачная копия или «неизвестно». Кэш по чанку проверяется по таймстампу и смещению из заголовка, так что после `save-all` декодируется только изменившееся. Тест: 12 сканов 1024 чанков параллельно с `save-all flush` прошли без единой ошибки.
+**Robustness while the server is running.** Only the region header (8 KiB) and the sectors of the needed chunks are read, without `readFileSync` of the whole `.mca`. A corrupt chunk is re-read up to three times with a 40–120 ms pause. If that fails, the last good copy or "unknown" is used. The per-chunk cache is validated by the timestamp and offset from the header, so after `save-all` only what changed is decoded. Test: 12 scans of 1024 chunks in parallel with `save-all flush` passed without a single error.
 
-**Проточанки.** В тестовом мире треть чанков не `full` (статусы `carvers`, `biomes`, `initialize_light`…). Высоты корректны начиная со статуса `noise`, материал поверхности — с `surface`, деревья — с `features`. Ниже `noise` колонка считается неизвестной (на картинках серые клетки).
+**Proto-chunks.** In the test world a third of the chunks are not `full` (statuses `carvers`, `biomes`, `initialize_light`…). Heights are correct from status `noise` on, surface material from `surface`, trees from `features`. Below `noise` a column is treated as unknown (gray cells in the images).
 
-### 2.2 Ячейка 21×21
+### 2.2 The 21×21 cell
 
-`classifyCells(an, { origin: [cx, cz] })` строит ячейки по той же сетке, что `plotRect` в `city.mjs`. Метрики ячейки: доли воды, леса, застройки, песка и снега, плоскость по МНК (уклон и экспозиция), `relief` (p95−p5), доли крутых и обрывистых колонок, стороны, выходящие к воде, макс. глубина. Плюс план платформы для лота 17×17 (§3.2).
+`classifyCells(an, { origin: [cx, cz] })` builds cells on the same grid as `plotRect` in `city.mjs`. Cell metrics: fractions of water, forest, built-up, sand and snow; a least-squares plane (slope and aspect); `relief` (p95−p5); fractions of steep and cliff columns; sides facing the water; max depth. Plus a platform plan for the 17×17 lot (§3.2).
 
-| Класс | Правило (по порядку) | Использование (`use`) |
+| Class | Rule (in order) | Usage (`use`) |
 |---|---|---|
-| `unknown` | >30% колонок не сгенерировано | `scan-again` |
-| `built` | ≥35% колонок наши (улицы, дома) | `occupied` |
-| `river_crossing` | река входит и выходит через противоположные края, берега на двух других, ширина ≤ ~16; либо речная ячейка с сушей по обе стороны | `bridge`, при relief ≥12 `viaduct` |
-| `water` | ≥65% воды | `open-water` (глубина ≥3), `shallows`, `river` |
-| `shoreline` | ≥6% воды, или ≥8% колонок в 3 блоках от воды, или сосед ячейки воды | `beach` (≥25% песка, пологая), `cliff-shore` (relief ≥8), `waterfront`, `riverside` |
-| `cliff` | ≥8% колонок с обрывом ≥3, или relief ≥14 | `natural` (смотровая, тропа) |
-| `steep` | уклон ≥0,33, или relief ≥9, или ≥20% колонок круче 45° | план: `terrace2/3`, `walkout`, `stilts`, `natural` |
-| `gentle` | уклон ≥0,10 или relief ≥4 | обычно `level` или `walkout` |
-| `flat` | остальное | `level` |
-| `forest` | `flat` или `gentle` с ≥45% колонок под деревьями | `park`; дом на поляне дороже |
+| `unknown` | >30% of columns not generated | `scan-again` |
+| `built` | ≥35% of columns are ours (streets, houses) | `occupied` |
+| `river_crossing` | the river enters and exits through opposite edges, banks on the other two, width ≤ ~16; or a river cell with land on both sides | `bridge`, at relief ≥12 `viaduct` |
+| `water` | ≥65% water | `open-water` (depth ≥3), `shallows`, `river` |
+| `shoreline` | ≥6% water, or ≥8% of columns within 3 blocks of water, or neighbor of a water cell | `beach` (≥25% sand, gentle), `cliff-shore` (relief ≥8), `waterfront`, `riverside` |
+| `cliff` | ≥8% of columns with a drop ≥3, or relief ≥14 | `natural` (lookout, trail) |
+| `steep` | slope ≥0.33, or relief ≥9, or ≥20% of columns steeper than 45° | plan: `terrace2/3`, `walkout`, `stilts`, `natural` |
+| `gentle` | slope ≥0.10 or relief ≥4 | usually `level` or `walkout` |
+| `flat` | everything else | `level` |
+| `forest` | `flat` or `gentle` with ≥45% of columns under trees | `park`; a house in a clearing costs more |
 
-Дополнительно считаются `harbourScore` береговых ячеек (глубина ≥3 у соседней ячейки озера или моря), `harbourSites()` (жадный выбор лучших мест, не ближе 5 ячеек друг к другу, ближе к центру, на пологом берегу), `siteScore()` (оценка места для города) и `simulateGrowth()` (прототип нового `nextCell`).
+Additionally computed: `harbourScore` of shore cells (depth ≥3 in the neighboring lake or sea cell), `harbourSites()` (greedy selection of the best spots, no closer than 5 cells to each other, closer to the center, on a gentle shore), `siteScore()` (town site scoring) and `simulateGrowth()` (prototype of the new `nextCell`).
 
-### 2.3 Картинки
+### 2.3 Images
 
-Тестовый город (центр 6096,-6412). Белые `u` — уже застроенные ячейки, жёлтые `b wf/be` — берег, голубые рамки — места для гавани. Город стоит на полуострове, а восточные участки отсыпаны в море.
+Test town (center 6096,-6412). White `u` are already built-up cells, yellow `b wf/be` are shore, light-blue frames are harbour sites. The town sits on a peninsula, and the eastern plots were filled out into the sea.
 
-![Тестовый город, классы ячеек](terrain-adaptive/test-city-cells.png)
+![Test town, cell classes](terrain-adaptive/test-city-cells.png)
 
-Долина реки с холмами и озёрами (x 5890..6330, z -5640..-5240): кандидат «по-швейцарски». Классы:
+River valley with hills and lakes (x 5890..6330, z -5640..-5240): a "Swiss-style" candidate. Classes:
 
-![Долина: классы](terrain-adaptive/valley-cells.png)
+![Valley: classes](terrain-adaptive/valley-cells.png)
 
-Симуляция роста на 70 домов от берега. Город поднимается от y=63 у воды до y=111 на плато террасами: 47 участков `level`, 11 `terrace2`, 9 `walkout`, 2 лестницы `st` через крутые ячейки, 11 смотровых `vp`, 3 парка.
+Growth simulation for 70 houses starting from the shore. The town climbs in terraces from y=63 at the water to y=111 on the plateau: 47 `level` plots, 11 `terrace2`, 9 `walkout`, 2 `st` staircases across steep cells, 11 `vp` lookouts, 3 parks.
 
-![Долина: план роста](terrain-adaptive/valley-plan.png)
+![Valley: growth plan](terrain-adaptive/valley-plan.png)
 
-Уклон по колонкам (`--view slope`): ![Долина: уклон](terrain-adaptive/valley-slope.png)
+Per-column slope (`--view slope`): ![Valley: slope](terrain-adaptive/valley-slope.png)
 
-Живой город (`server/world`, только чтение): у восточного края, в ячейке [3,-1] (≈ -959, 1001), есть место под гавань. Это кандидат для миграции (§9).
+Live town (`server/world`, read-only): at the eastern edge, in cell [3,-1] (≈ -959, 1001), there is room for a harbour. This is a migration candidate (§9).
 
-![Живой город](terrain-adaptive/live-city-cells.png)
+![Live town](terrain-adaptive/live-city-cells.png)
 
-## 3. Холмы
+## 3. Hills
 
-### 3.1 Бюджет
+### 3.1 Budget
 
-- Внутри лота: срезка ≤3 и подсыпка ≤3 на колонку (параметр `budget`). Апрон вокруг лота ≤2 блоков вместо 8. Выше уровня `рельеф + бюджет` воздух не расчищается.
-- Деревья за пределами лота не трогаем. Внутри лота убираем только те, что пересекают объём дома.
-- Склон за лотом остаётся природным. Если перепад до него больше 3, ставится подпорная стенка из камня (`stone_bricks`, `mossy_stone_bricks`, `cobblestone` с `moss_carpet` и цветами сверху), а не откос 1:1 на 8 блоков.
+- Inside the lot: cut ≤3 and fill ≤3 per column (the `budget` parameter). The apron around the lot is ≤2 blocks instead of 8. Air is not cleared above the `terrain + budget` level.
+- Trees outside the lot are left alone. Inside the lot only those that intersect the house volume are removed.
+- The slope beyond the lot stays natural. If the drop to it is more than 3, a stone retaining wall is placed (`stone_bricks`, `mossy_stone_bricks`, `cobblestone` with `moss_carpet` and flowers on top) instead of an 8-block 1:1 embankment.
 
-### 3.2 План платформы (`platformPlan`)
+### 3.2 Platform plan (`platformPlan`)
 
-Перебор от дешёвого к дорогому, все варианты в пределах бюджета:
+Options are tried from cheapest to most expensive, all within the budget:
 
 ```
-level      ▁▁▁▁▁▁▁▁▁        одна платформа: relief лота ≤ 2·budget (≤6)
-terrace2   ▁▁▁▁▁            две платформы поперёк склона (по экспозиции), уступ ≤6,
-               ▔▔▔▔▔        подпорная стенка между ними; дом на верхней, сад на нижней
-terrace3   три полосы, то же самое
-walkout        ┌───┐        relief ≤ 2·budget+4: вход с верхней улицы, цоколь/погреб
-           ┌───┤   │        открывается вниз по склону (Keller, гараж, мастерская)
+level      ▁▁▁▁▁▁▁▁▁        one platform: lot relief ≤ 2·budget (≤6)
+terrace2   ▁▁▁▁▁            two platforms across the slope (by aspect), step ≤6,
+               ▔▔▔▔▔        retaining wall between them; house on the upper one, garden on the lower
+terrace3   three strips, same thing
+walkout        ┌───┐        relief ≤ 2·budget+4: entrance from the upper street, basement/cellar
+           ┌───┤   │        opens downhill (Keller, garage, workshop)
            ╱▔▔▔▔▔▔▔▔╲
-stilts     ┌───────┐        пол на уровне p85, срезка ≤ budget, под полом сваи/столбы
-           ║  ║  ║ ║        до земли (≤9 блоков): Walliser Stadel, Pfahlbau
+stilts     ┌───────┐        floor at p85 level, cut ≤ budget, piles/posts under the floor
+           ║  ║  ║ ║        down to the ground (≤9 blocks): Walliser Stadel, Pfahlbau
          ╱▔╱▔▔╲▔▔▔╲
-natural    ничего не строим: тропа, скамейка, смотровая
+natural    nothing is built: trail, bench, lookout
 ```
 
-Для лестниц и ступеней экспозиция переводится в повороты (`turns`): дом встаёт входом к верхней улице, а цоколь смотрит вниз по склону.
+For stairs and steps the aspect is converted into rotations (`turns`): the house faces its entrance toward the upper street, and the basement looks downhill.
 
-### 3.3 Швы между участками
+### 3.3 Seams between plots
 
-Высоту соседи больше не диктуют. Шов выбирается по |dy| между уровнями улиц (кольцо 2 блока по краю ячейки):
+Neighbors no longer dictate the height. The seam is chosen by |dy| between the street levels (the 2-block ring along the cell edge):
 
-| |dy| | Шов | Что строится |
+| |dy| | Seam | What gets built |
 |---|---|---|
-| 0–1 | ступень | как сейчас: один ряд ступеней |
-| 2–4 | лестница + стенка | ряд ступеней на всю ширину улицы, подпорная стенка у верхнего края, кадки с цветами |
-| 5–8 | Treppengasse | глухая подпорная стена на всю сторону. Лестничный марш идёт **вдоль** стены, с площадкой посередине, и не перекрывает улицу. Перила, фонарь |
-| 9+ | нет связи | стена с садом наверху. Пешеходная связь идёт через соседнюю ячейку или лестничную ячейку-серпантин |
+| 0–1 | step | as now: one row of stairs |
+| 2–4 | staircase + wall | a row of stairs across the full street width, a retaining wall at the upper edge, flower tubs |
+| 5–8 | Treppengasse | a solid retaining wall along the whole side. The flight of stairs runs **along** the wall, with a landing in the middle, and does not block the street. Railing, lantern |
+| 9+ | no connection | a wall with a garden on top. The pedestrian link goes through the neighboring cell or a serpentine stair cell |
 
-Распределение на симуляции долины (92 шва): 0–1: 27, 2: 14, 3–4: 27, 5–8: 19, 9+: 5. Сегодняшний `seamCommands` закрывает только первые две строки, нужен генератор швов (§8).
+Distribution in the valley simulation (92 seams): 0–1: 27, 2: 14, 3–4: 27, 5–8: 19, 9+: 5. The current `seamCommands` covers only the first two rows; a seam generator is needed (§8).
 
-### 3.4 Улицы по горизонталям
+### 3.4 Streets along contour lines
 
-- **В текущей сетке.** Кольцо-улица идёт на уровне платформы. Сторона, перпендикулярная горизонталям, превращается в лестницу (шов). Поперёк склона, где |dy| большой, улица не продолжается, и связь уходит на соседнюю ячейку вдоль горизонтали. Получаются террасные улицы с лестничными переулками.
-- **Серпантин.** Если крутую ячейку (`steep`/`cliff`) нельзя застроить, но за ней есть застраиваемая, она становится лестничной ячейкой `stairs`: зигзаг ступеней по 4–5 блоков, повороты с площадками, подпорные стенки, фонари. В симуляции такие ячейки отмечены `st`.
-- **Позже (большой редизайн).** Контурные кварталы: ряды ячеек сдвигаются на полячейки вдоль горизонтали, а улицы строятся как граф по горизонталям, без фиксированного кольца. Сейчас не рекомендуется: ломает `cellKey`, `plotRect`, PostAuto и маршруты.
+- **In the current grid.** The ring street runs at platform level. The side perpendicular to the contour lines turns into a staircase (seam). Across the slope, where |dy| is large, the street does not continue, and the connection goes to the neighboring cell along the contour line. The result is terraced streets with stair alleys.
+- **Serpentine.** If a steep cell (`steep`/`cliff`) cannot be built on but there is a buildable one beyond it, it becomes a `stairs` cell: a zigzag of 4–5-block stair runs, turns with landings, retaining walls, lanterns. In the simulation such cells are marked `st`.
+- **Later (major redesign).** Contour-following districts: rows of cells are shifted by half a cell along the contour line, and streets are built as a graph along contour lines, without a fixed ring. Not recommended now: it breaks `cellKey`, `plotRect`, PostAuto and routes.
 
-### 3.5 Скалы и крутые склоны
+### 3.5 Cliffs and steep slopes
 
-Ячейки `cliff` и `natural` никогда не застраиваются. Если такая ячейка граничит с городом, на её кромке появляется смотровая площадка: деревянный настил на консолях, перила, скамейка, швейцарский флаг, подзорная труба (`spyglass` в `item_display`), табличка с названием вершины из `bridge/peaks.mjs`. К ней ведёт тропа из `dirt_path` и ступеней.
+`cliff` and `natural` cells are never built on. If such a cell borders the town, a lookout platform appears on its edge: a cantilevered wooden deck, railing, bench, Swiss flag, a telescope (`spyglass` in an `item_display`), a sign with the peak name from `bridge/peaks.mjs`. A trail of `dirt_path` and steps leads to it.
 
-## 4. Вода
+## 4. Water
 
-### 4.1 Не засыпать
+### 4.1 Do not fill in
 
-- В `preparePlot` подсыпка идёт только по `air` и растениям, вода не трогается: свой блок-тег в датапаке (`#alps:fillable` = air + растения) или две команды `fill … replace air` / `replace #minecraft:flowers`.
-- Ячейки `water` никогда не становятся домами. Часть лота над водой (у береговой ячейки) стоит на сваях или пирсе, не на насыпи.
+- In `preparePlot` fill goes only over `air` and plants; water is left untouched: either our own block tag in the datapack (`#alps:fillable` = air + plants) or two commands `fill … replace air` / `replace #minecraft:flowers`.
+- `water` cells never become houses. The part of a lot that is over water (at a shore cell) stands on stilts or a pier, not on an embankment.
 
-### 4.2 Береговые ячейки
+### 4.2 Shore cells
 
-| use | Что строится |
+| use | What gets built |
 |---|---|
-| `beach` | Пляж и «Badi» (швейцарская купальня): песок, зонтики (баннер на заборе), шезлонги (ступени, ковры), кабинки, вышка-трамплин на мостках, лодки на песке |
-| `waterfront` | Набережная (Quai): 3–4 блока каменной мостовой вдоль воды, стенка набережной `stone_bricks` до дна или на 3 блока, липы в ряд, фонари, скамейки, перила, ступени к воде; дома за набережной |
-| `riverside` | Узкая набережная, лестница к воде, мостки для стирки и лодок |
-| `cliff-shore` | Терраса-ресторан над водой, лестница к причалу внизу, виноградные террасы (Lavaux) |
+| `beach` | Beach and "Badi" (Swiss lido): sand, parasols (a banner on a fence), deckchairs (stairs, carpets), changing cabins, a diving tower on a boardwalk, boats on the sand |
+| `waterfront` | Promenade (Quai): 3–4 blocks of stone paving along the water, a `stone_bricks` quay wall down to the bottom or 3 blocks deep, a row of linden trees, lanterns, benches, railing, steps down to the water; houses behind the promenade |
+| `riverside` | A narrow promenade, stairs down to the water, a boardwalk for washing and boats |
+| `cliff-shore` | A restaurant terrace above the water, stairs down to a jetty below, vineyard terraces (Lavaux) |
 
-Дом на береговой ячейке встаёт на сушу. Набережная проходит по стороне, выходящей к воде (`edgesToWater`). Если суша занимает меньше 60% лота, остальное стоит на сваях.
+A house on a shore cell stands on dry land. The promenade runs along the side facing the water (`edgesToWater`). If land covers less than 60% of the lot, the rest stands on stilts.
 
-### 4.3 Пирсы
+### 4.3 Piers
 
-Для каждой водной ячейки перед `waterfront`/`beach` с глубиной ≥2:
+For each water cell in front of a `waterfront`/`beach` with depth ≥2:
 
-- настил шириной 2–3 из `spruce_slab` на столбах-заборах до дна (дно известно из скана), длина до глубины ≥3, но не дальше 12 блоков;
-- фонарь на конце, швартовые тумбы (`polished_andesite_wall`, цепь);
-- 1–3 лодки (`oak_boat`, `spruce_boat`) у пирса. Лодки сносит течением, поэтому только в стоячей воде; в реке их можно привязать поводком (в 1.21.2+ лодки, кажется, можно привязывать, проверить).
+- a 2–3-wide deck of `spruce_slab` on fence posts down to the bottom (the bottom is known from the scan), extending until depth ≥3, but no farther than 12 blocks;
+- a lantern at the end, mooring bollards (`polished_andesite_wall`, chain);
+- 1–3 boats (`oak_boat`, `spruce_boat`) at the pier. Boats drift with the current, so only in still water; in a river they could be tied with a lead (in 1.21.2+ boats can apparently be leashed — to verify).
 
-### 4.4 Гавань
+### 4.4 Harbour
 
-Место выбирает `harbourSites`: береговая ячейка, рядом озеро или море (не река, не пруд) глубиной ≥3, ближе к центру, на пологом берегу, одна на район или 5 ячеек. Состав (1–3 ячейки):
+The site is chosen by `harbourSites`: a shore cell next to a lake or sea (not a river, not a pond) with depth ≥3, closer to the center, on a gentle shore, one per district or per 5 cells. Composition (1–3 cells):
 
 ```
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        ~~  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▲ ~~~~~   ▓ мол (stone_bricks / cobblestone wall), ▲ маяк на голове
-        ~~  ▓  ⛵   ⛵      ▓ ~~~~~   ⛵ лодки, ⛴ пароход у причала
-        ~~  ▓    ⛴═════     ▓ ~~~~~   ═ причал Schiffstation
-        ════╧══════════╧═════╧════   ─ стенка набережной
-        [Bootshaus][Schiffstation⌚][Fisch]   дома на берегу; ⌚ часы SBB (feature clocks)
+        ~~  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▲ ~~~~~   ▓ breakwater (stone_bricks / cobblestone wall), ▲ lighthouse at the head
+        ~~  ▓  ⛵   ⛵      ▓ ~~~~~   ⛵ boats, ⛴ steamer at the jetty
+        ~~  ▓    ⛴═════     ▓ ~~~~~   ═ Schiffstation jetty
+        ════╧══════════╧═════╧════   ─ quay wall
+        [Bootshaus][Schiffstation⌚][Fisch]   houses on the shore; ⌚ SBB clock (feature clocks)
 ```
 
-- Мол из камня ставится в воду. Это не засыпка: узкая стенка 2–3 блока, вода за ней остаётся.
-- Маяк на голове мола. На озере это маленький красно-белый маяк, как в Романсхорне или Бруннене; на море — высокий. Ночью в нём светит лампа (feature night).
-- Bootshaus: деревянный дом на сваях с водой внутри и лодкой.
-- Schiffstation: павильон с часами SBB (переиспользовать `clocks.mjs`) и табличкой «Abfahrt».
-- Кран, сети, бочки, рыбный ларёк.
+- The stone breakwater is placed in the water. This is not filling in: a narrow 2–3-block wall, the water behind it remains.
+- A lighthouse at the head of the breakwater. On a lake it is a small red-and-white lighthouse, as in Romanshorn or Brunnen; on the sea a tall one. At night its lamp is lit (feature night).
+- Bootshaus: a wooden boathouse on stilts with water inside and a boat.
+- Schiffstation: a pavilion with an SBB clock (reuse `clocks.mjs`) and an "Abfahrt" sign.
+- Crane, nets, barrels, a fish stall.
 
-### 4.5 Корабли
+### 4.5 Ships
 
-- **Лодки**: настоящие сущности `boat` (Invulnerable, PersistenceRequired). Рыбак — житель с профессией `fisherman` в лодке (NoAI). Удочка — `item_display`.
-- **Парусники**: составной `block_display`: корпус из ступеней и плит, парус из `white_wool` масштабом 0,1. Медленно ходят по кругу по воде.
-- **Озёрный пароход** (DS «Stadt Luzern»): составной `block_display`. Белый корпус, две палубы, жёлтая труба, гребные колёса в кожухах по бортам, флаг на корме. Около 15 дисплеев — «пассажиры» одного `item_display`-корня, как аллей в `life.mjs`. Движение: `tp` корня с `teleport_duration` по точкам маршрута, как у PostAuto в `work.mjs`; поворот через yaw. Колёса вращаются интерполяцией `left_rotation`, как стрелки часов. Маршрут — A* по колонкам воды с `offshore ≥4` и `depth ≥3` между причалами. Расписание: отправление каждый час по часам SBB, пауза у причала 20 с. Пароход работает, только пока игрок ближе ~160 блоков: чанки должны быть загружены, а команды стоят денег.
+- **Boats**: real `boat` entities (Invulnerable, PersistenceRequired). A fisherman is a villager with the `fisherman` profession in a boat (NoAI). The fishing rod is an `item_display`.
+- **Sailboats**: a composite `block_display`: hull of stairs and slabs, a sail of `white_wool` at scale 0.1. They slowly circle on the water.
+- **Lake steamer** (DS "Stadt Luzern"): a composite `block_display`. White hull, two decks, a yellow funnel, paddle wheels in housings on both sides, a flag at the stern. About 15 displays as "passengers" of a single `item_display` root, like the allay in `life.mjs`. Movement: `tp` of the root with `teleport_duration` along route waypoints, like PostAuto in `work.mjs`; turning via yaw. The wheels rotate via `left_rotation` interpolation, like the clock hands. The route is A* over water columns with `offshore ≥4` and `depth ≥3` between jetties. Schedule: departure every hour by the SBB clock, a 20 s stop at the jetty. The steamer runs only while a player is within ~160 blocks: the chunks must be loaded, and commands are not free.
 
-### 4.6 Мосты
+### 4.6 Bridges
 
-`river_crossing` — не участок с домом, а общественный объект, его строят свободные строители («Экономика чатов» → общественные работы).
+`river_crossing` is not a house plot but a public structure; it is built by idle builders ("Chat economy" → public works).
 
-| Ширина / рельеф | Тип |
+| Width / relief | Type |
 |---|---|
-| ≤12 | каменный однопролётный арочный мост, `stone_bricks` + `stone_brick_stairs` по арке, перила `stone_brick_wall` |
-| 13–30 | крытый деревянный мост, как Kapellbrücke: настил `spruce_planks`, крыша `spruce_stairs`, на перилах цветочные ящики, посередине восьмиугольная башня Wasserturm на каменной опоре; либо многопролётный каменный |
-| relief ≥12 (ущелье) | виадук, как Landwasser: высокие каменные арки до дна; по нему может ходить «поезд» (block_display, как PostAuto) |
+| ≤12 | single-span stone arch bridge, `stone_bricks` + `stone_brick_stairs` along the arch, `stone_brick_wall` railing |
+| 13–30 | covered wooden bridge like the Kapellbrücke: `spruce_planks` deck, `spruce_stairs` roof, flower boxes on the railings, an octagonal Wasserturm tower on a stone pier in the middle; or a multi-span stone bridge |
+| relief ≥12 (gorge) | a viaduct like the Landwasser: tall stone arches down to the bottom; a "train" can run across it (block_display, like PostAuto) |
 
-Высота настила = максимум уровней улиц на двух берегах + ramp. Опоры ставятся до дна, вода между ними не трогается. Ось моста — по направлению «берег → берег» из `river_crossing`.
+Deck height = the maximum of the street levels on both banks + ramp. Piers go down to the bottom, the water between them is left untouched. The bridge axis follows the "bank → bank" direction from `river_crossing`.
 
-### 4.7 Районы у воды
+### 4.7 Waterside districts
 
-- Береговая ячейка получает зону-модификатор `waterfront` поверх кольцевой зоны (core/inner/outer/rural). `pickType` добавляет веса из `CATALOG[type].terrain` (§7). Гранд-отель предпочитает воду, как в Монтрё и Витцнау.
-- Площадь района (`plaza`), если район касается воды, ставится на берег как Seeplatz с причалом.
-- Первый причал района — «Schiffstation <район>». Пароход связывает районы на одном водоёме.
+- A shore cell gets a `waterfront` zone modifier on top of the ring zone (core/inner/outer/rural). `pickType` adds weights from `CATALOG[type].terrain` (§7). The grand hotel prefers water, as in Montreux and Vitznau.
+- A district square (`plaza`), if the district touches the water, is placed on the shore as a Seeplatz with a jetty.
+- A district's first jetty is "Schiffstation <district>". The steamer connects districts on the same body of water.
 
-## 5. Леса
+## 5. Forests
 
-- Деревья вокруг участка больше не вычищаются (§3.1).
-- `forest`-ячейка — дорогая, но допустимая: дом на поляне, деревья вне контура дома остаются (`Waldhaus`, хижина). Если район окружён лесом, на опушке появляется парк: лавки, тропинка, костровище.
-- Сплошные массивы лесных ячеек между районами не застраиваются, это зелёные клинья города.
+- Trees around a plot are no longer cleared (§3.1).
+- A `forest` cell is expensive but allowed: a house in a clearing, trees outside the house footprint remain (`Waldhaus`, hut). If a district is surrounded by forest, a park appears at the forest edge: benches, a path, a fire pit.
+- Continuous stretches of forest cells between districts are not built on; they are the town's green wedges.
 
-## 6. Как встроить в модель сетки и районов
+## 6. How to fit this into the grid and district model
 
-### 6.1 Минимальные изменения (рекомендуется)
+### 6.1 Minimal changes (recommended)
 
-| Сейчас | Станет |
+| Now | Becomes |
 |---|---|
-| `nextCell` выбирает по `hypot(c) + dist(seed)·0.8` | то же + `cost(cell)`: `level` 0, `walkout` 0,8, `terrace2` 1,2, `terrace3` 2, `stilts` 2,5, берег 0,4, лес +1,5, мост 3; ∞ для `water`/`cliff`/`unknown`/`built`; лестничная ячейка как переход (§3.4). Прототип — `simulateGrowth` |
-| `plotGround` (пробы spreadplayers, кламп ±1/±12) | `terrain.cellPlan(cell)` из скана: уровни, режим, экспозиция, стороны к воде. Без клампа |
-| `preparePlot(r, y)` | `prepareAdaptive(plot)`: бюджет, террасы, подпорные стенки, сваи, без засыпки воды, апрон ≤2 |
-| `stitchSeam` (|dy| ≤2) | `seamBuilder(dy)` по таблице §3.3 |
-| `pickType(zone)` | `pickType(zone, terrain)`: веса `CATALOG[type].terrain[cls]` и вариант `options.terrain` для генератора |
-| `districtSeed` (золотой угол) | тот же луч, но первая подходящая ячейка — не `water`/`cliff`, лучше с водой рядом |
+| `nextCell` chooses by `hypot(c) + dist(seed)·0.8` | the same + `cost(cell)`: `level` 0, `walkout` 0.8, `terrace2` 1.2, `terrace3` 2, `stilts` 2.5, shore 0.4, forest +1.5, bridge 3; ∞ for `water`/`cliff`/`unknown`/`built`; a stair cell acts as a passage (§3.4). Prototype: `simulateGrowth` |
+| `plotGround` (spreadplayers probes, ±1/±12 clamp) | `terrain.cellPlan(cell)` from the scan: levels, mode, aspect, water sides. No clamp |
+| `preparePlot(r, y)` | `prepareAdaptive(plot)`: budget, terraces, retaining walls, stilts, no water filling, apron ≤2 |
+| `stitchSeam` (|dy| ≤2) | `seamBuilder(dy)` per the table in §3.3 |
+| `pickType(zone)` | `pickType(zone, terrain)`: weights `CATALOG[type].terrain[cls]` and an `options.terrain` variant for the generator |
+| `districtSeed` (golden angle) | the same ray, but the first suitable cell is not `water`/`cliff`, preferably with water nearby |
 
-В `plot` добавляется `terrain: { mode, levels, aspect, waterSides, scanVersion }`. Старые участки без этого поля строятся как раньше.
+`plot` gets a new field `terrain: { mode, levels, aspect, waterSides, scanVersion }`. Old plots without this field are built as before.
 
-### 6.2 Большой редизайн (потом)
+### 6.2 Major redesign (later)
 
-Контурные кварталы, граф улиц, участки неправильной формы. Нужен, только если сетка 21×21 станет узким местом. Тогда же переделываются PostAuto, жители (`life.mjs`) и швы.
+Contour-following districts, a street graph, irregularly shaped plots. Needed only if the 21×21 grid becomes a bottleneck. PostAuto, villagers (`life.mjs`) and seams would be reworked at the same time.
 
-### 6.3 Выбор места (`findValley` v2)
+### 6.3 Site selection (`findValley` v2)
 
-1. Кандидаты: `locate biome` как сейчас, плюс `river`, `meadow`, `cherry_grove`, `stony_shore`. Учитываются только кандидаты, у которых в радиусе 300 блоков есть `#is_mountain` или `windswept_hills`.
-2. Окно 13×13 ячеек (≈270×270 блоков) вокруг кандидата: `forceload add` по 256 чанков максимум на команду, ожидание статуса ≥`noise` на диске (для высот хватает; деревья не нужны), `save-all`, скан.
-3. `siteScore` (меньше — лучше): ядро r≤2 застраиваемое, вода (озеро/река/залив) в радиусе 6 ячеек, береговых ячеек ≥8, 1–3 места под гавань, холмы на кольце 6–10 ячеек (relief), мало скал в ядре, без воды в центре. Прототип уже считает это: долина 6096,-5463 получила −26, тестовый город −49, живой −90.
-4. Потом `forceload remove`. Генерация 300–900 чанков на Paper занимает ≈10–40 с, это разовая стоимость при основании города.
+1. Candidates: `locate biome` as now, plus `river`, `meadow`, `cherry_grove`, `stony_shore`. Only candidates with `#is_mountain` or `windswept_hills` within 300 blocks are considered.
+2. A 13×13-cell window (≈270×270 blocks) around the candidate: `forceload add` with at most 256 chunks per command, wait for status ≥`noise` on disk (enough for heights; trees are not needed), `save-all`, scan.
+3. `siteScore` (lower is better): a buildable core r≤2, water (lake/river/bay) within 6 cells, ≥8 shore cells, 1–3 harbour sites, hills on the 6–10-cell ring (relief), few cliffs in the core, no water at the center. The prototype already computes this: the valley at 6096,-5463 scored −26, the test town −49, the live town −90.
+4. Then `forceload remove`. Generating 300–900 chunks on Paper takes ≈10–40 s, a one-time cost when founding a town.
 
-## 7. Новые типы и варианты зданий (для архитектора)
+## 7. New building types and variants (for the architect)
 
-Генератор получает `options.terrain = { mode, levels:[…], turnsDownhill, waterSides:[…] }` и строит вариант. Детерминизм и этапы — по `docs/generator-contract.md`: все `rng`-решения тянутся до рисования, вариант влияет только на цоколь и опоры.
+The generator receives `options.terrain = { mode, levels:[…], turnsDownhill, waterSides:[…] }` and builds a variant. Determinism and stages follow `docs/generator-contract.md`: all `rng` decisions are made before rendering, and the variant affects only the basement and supports.
 
-| Тип / вариант | Режим | Кратко |
+| Type / variant | Mode | Summary |
 |---|---|---|
-| `chalet`, `townhouse`, `farmhouse` · **walkout** | `walkout` | цокольный этаж из камня ниже по склону: погреб, мастерская, гараж с воротами; вход сверху; балкон над цоколем |
-| `chalet`, `hut` · **stilts** | `stilts` | пол на уровне p85, под ним сваи `spruce_log`/камень до земли, лестница к входу; Stadel-«грибы» (`stone_slab` на столбах) |
-| `terrace_house` (Reihenhaus) | `terrace2/3` | 2–3 секции, каждая на своей платформе, общая крыша ступенями |
-| `vineyard` | `terrace2/3`, `cliff-shore` | подпорные стенки, лозы (`cave_vines`/`sweet_berry_bush` по шпалерам), домик винодела (Lavaux) |
-| `boathouse` (Bootshaus) | берег | деревянный дом на сваях, вода внутри, лодка, ворота к воде |
-| `lido` (Badi) | `beach` | кабинки, мостки, вышка, кафе-киоск |
-| `schiffstation` | гавань / причал | павильон, часы SBB, табло, причал |
-| `lighthouse` | голова мола | 1×1–3×3 башня, лампа, красно-белые полосы (`red_concrete`/`white_concrete`) |
-| `seevilla` | `waterfront` | вилла с садом к воде и маленьким причалом |
-| `lake_hotel` | `waterfront` | вариант `hotel` с террасой-набережной |
-| `fish_stall`, `harbour_crane` | гавань | малые формы (`smallforms.mjs`) |
-| `bridge_arch`, `bridge_covered`, `viaduct` | `river_crossing` | §4.6, не участки, а объекты длиной N |
-| `viewpoint`, `stair_lane` | `cliff`/`steep` | смотровая, лестничная ячейка-серпантин |
+| `chalet`, `townhouse`, `farmhouse` · **walkout** | `walkout` | a stone basement storey further down the slope: cellar, workshop, garage with a gate; entrance from above; a balcony over the basement |
+| `chalet`, `hut` · **stilts** | `stilts` | floor at p85 level, `spruce_log`/stone piles below it down to the ground, stairs to the entrance; Stadel "mushrooms" (`stone_slab` on posts) |
+| `terrace_house` (Reihenhaus) | `terrace2/3` | 2–3 sections, each on its own platform, a shared stepped roof |
+| `vineyard` | `terrace2/3`, `cliff-shore` | retaining walls, vines (`cave_vines`/`sweet_berry_bush` on trellises), a winemaker's cottage (Lavaux) |
+| `boathouse` (Bootshaus) | shore | a wooden house on stilts, water inside, a boat, a gate to the water |
+| `lido` (Badi) | `beach` | changing cabins, boardwalk, diving tower, café kiosk |
+| `schiffstation` | harbour / jetty | pavilion, SBB clock, departure board, jetty |
+| `lighthouse` | breakwater head | 1×1–3×3 tower, lamp, red-and-white stripes (`red_concrete`/`white_concrete`) |
+| `seevilla` | `waterfront` | a villa with a garden down to the water and a small jetty |
+| `lake_hotel` | `waterfront` | a `hotel` variant with a promenade terrace |
+| `fish_stall`, `harbour_crane` | harbour | small forms (`smallforms.mjs`) |
+| `bridge_arch`, `bridge_covered`, `viaduct` | `river_crossing` | §4.6; not plots but objects of length N |
+| `viewpoint`, `stair_lane` | `cliff`/`steep` | lookout, serpentine stair cell |
 
-Веса в `CATALOG[type].terrain`, например `boathouse: { terrain: { shoreline: 4 } }`, `chalet: { terrain: { steep: 2, gentle: 1 } }`.
+Weights live in `CATALOG[type].terrain`, e.g. `boathouse: { terrain: { shoreline: 4 } }`, `chalet: { terrain: { steep: 2, gentle: 1 } }`.
 
-## 8. Что нужно от моста (API)
+## 8. What is needed from the bridge (API)
 
 ```js
-// terrain-scan (в мосте один экземпляр, мир = config.serverDir/<level-name>)
-scanner.scan(rect) / analyze(grid) / classifyCells(an, { origin })   // есть в прототипе
-terrain.refresh(rect)            // `save-all flush` (не чаще раза в N минут) + перескан изменившихся чанков
-terrain.cellInfo(cell)           // класс, use, план, стороны к воде; кэш на state.city
-terrain.ensureGenerated(rect)    // forceload + ожидание статуса ≥ noise (для findValley и края города)
+// terrain-scan (a single instance in the bridge, world = config.serverDir/<level-name>)
+scanner.scan(rect) / analyze(grid) / classifyCells(an, { origin })   // exists in the prototype
+terrain.refresh(rect)            // `save-all flush` (at most once every N minutes) + rescan of changed chunks
+terrain.cellInfo(cell)           // class, use, plan, water sides; cached on state.city
+terrain.ensureGenerated(rect)    // forceload + wait for status ≥ noise (for findValley and the town edge)
 
-// планировщик
+// planner
 nextCell(state, district, terrainCost)       // §6.1
 cellPlan(cell) -> { mode, levels, aspect, waterSides }
-seamCommands(plot, neighbour, dir)           // по |dy| (§3.3), идемпотентно, учитывает STREET_VERSION
-prepareAdaptive(plot, plan)                  // бюджет, стенки, сваи, без засыпки воды
-waterworks: piers(cell), quay(edge), harbour(site), bridge(crossing)   // объекты как формы «Экономики»
-fleet feature: boats/steamer/sailboats       // bridge/features/fleet.mjs, onTick + игроки рядом
+seamCommands(plot, neighbour, dir)           // by |dy| (§3.3), idempotent, respects STREET_VERSION
+prepareAdaptive(plot, plan)                  // budget, walls, stilts, no water filling
+waterworks: piers(cell), quay(edge), harbour(site), bridge(crossing)   // objects like the "Economy" forms
+fleet feature: boats/steamer/sailboats       // bridge/features/fleet.mjs, onTick + players nearby
 ```
 
-Данные: `state.city.terrain = { scanVersion, harbourSites:[…], bridges:[…] }`, `plot.terrain`. Свежесть: природа сама не меняется, поэтому кэш скана по ячейке живёт до тех пор, пока рядом не строили мы. О своих изменениях мы и так знаем из `state`.
+Data: `state.city.terrain = { scanVersion, harbourSites:[…], bridges:[…] }`, `plot.terrain`. Freshness: nature does not change on its own, so the per-cell scan cache stays valid until we build nearby. We already know about our own changes from `state`.
 
-## 9. Миграция существующих городов
+## 9. Migrating existing towns
 
-- **Никогда не сносим.** Старые участки сохраняют `y`, новые получают планы. Шов между старым и новым строится по |dy| (§3.3).
-- **Новые участки** идут по новым правилам сразу, как только появится Фаза 1: город перестаёт расти в воду и срезать склоны.
-- **Ремонт берега** (бригада ремонта, только добавляет):
-  - если старый участок граничит с водой, газонный откос в воду облицовывается стенкой набережной `stone_bricks`: заменяется только `grass_block`/`dirt` на откосе, вода не трогается;
-  - на кольце-улице со стороны воды появляются перила, фонари и скамейки;
-  - в водной ячейке перед участком ставится пирс (вода остаётся, ставятся только столбы и настил);
-  - у лучшего места из `harbourSites` вырастает гавань. В живом городе это ячейка [3,-1] (≈ -959, 1001), прямо у восточного края; в тестовом — [4,6] (≈ 6180,-6286).
-- Мосты и пароход — новые объекты, к старым домам не прикасаются.
+- **Never demolish.** Old plots keep their `y`, new ones get plans. The seam between old and new is built by |dy| (§3.3).
+- **New plots** follow the new rules as soon as Phase 1 lands: the town stops growing into the water and cutting slopes.
+- **Shore renovation** (the renovation crew, additive only):
+  - if an old plot borders water, the lawn embankment into the water is faced with a `stone_bricks` quay wall: only `grass_block`/`dirt` on the embankment is replaced, the water is untouched;
+  - railings, lanterns and benches appear on the water side of the ring street;
+  - a pier is placed in the water cell in front of the plot (the water stays, only posts and deck are placed);
+  - a harbour grows at the best site from `harbourSites`. In the live town that is cell [3,-1] (≈ -959, 1001), right at the eastern edge; in the test town it is [4,6] (≈ 6180,-6286).
+- Bridges and the steamer are new objects and do not touch old houses.
 
-## 10. План внедрения
+## 10. Implementation plan
 
-| Фаза | Что | Оценка | Ценность |
+| Phase | What | Estimate | Value |
 |---|---|---|---|
-| **0. Перестать портить** | `preparePlot`: подсыпка только по воздуху и растениям (вода не засыпается); апрон 8 → 3, `clearAir` не выше `top+2`; деревья вокруг не трогать; `nextCell` пропускает ячейки, где проба нашла воду | 0,5 дня | высокая, риск низкий |
-| **1. Скан в мосте** | `terrain-scan` в `bridge`; `cellInfo` для `nextCell` (стоимость, запрет воды и скал); высота участка из плана `level` без клампа ±1/±12; `plot.terrain`; швы 2–4 со стенкой | 2–3 дня | высокая |
-| **2. Склоны** | `prepareAdaptive`: террасы, подпорные стенки с садами, сваи; швы 5–8 (Treppengasse) и 9+; лестничные ячейки; варианты генераторов `walkout`/`stilts` (архитектор) | 4–6 дней | высокая, видно сразу |
-| **3. Берег** | набережная, пляж/Badi, пирсы с лодками, гавань (мол, маяк, Bootshaus, Schiffstation); ремонт берега старых городов | 4–5 дней | высокая |
-| **4. Мосты и флот** | мосты трёх типов как общественные работы; feature `fleet`: лодки, парусники, пароход по расписанию | 4–6 дней | средняя–высокая, «вау» |
-| **5. Выбор места** | `findValley` v2: кандидаты, `ensureGenerated`, `siteScore` | 2 дня | только для новых городов |
+| **0. Stop the damage** | `preparePlot`: fill only over air and plants (water is not filled in); apron 8 → 3, `clearAir` no higher than `top+2`; leave surrounding trees alone; `nextCell` skips cells where the probe found water | 0.5 day | high, low risk |
+| **1. Scan in the bridge** | `terrain-scan` in `bridge`; `cellInfo` for `nextCell` (cost, ban on water and cliffs); plot height from the `level` plan without the ±1/±12 clamp; `plot.terrain`; 2–4 seams with a wall | 2–3 days | high |
+| **2. Slopes** | `prepareAdaptive`: terraces, retaining walls with gardens, stilts; 5–8 (Treppengasse) and 9+ seams; stair cells; `walkout`/`stilts` generator variants (architect) | 4–6 days | high, immediately visible |
+| **3. Shore** | promenade, beach/Badi, piers with boats, harbour (breakwater, lighthouse, Bootshaus, Schiffstation); shore renovation of old towns | 4–5 days | high |
+| **4. Bridges and fleet** | three bridge types as public works; `fleet` feature: boats, sailboats, scheduled steamer | 4–6 days | medium–high, "wow" |
+| **5. Site selection** | `findValley` v2: candidates, `ensureGenerated`, `siteScore` | 2 days | new towns only |
 
-**Рекомендуемая первая фаза: 0 + 1 вместе (≈3 дня).** Фаза 0 сразу останавливает засыпку моря и бритьё склонов. Фаза 1 даёт планировщику глаза: скан уже работает, его остаётся подключить к `nextCell` и `plotGround`.
+**Recommended first phase: 0 + 1 together (≈3 days).** Phase 0 immediately stops filling in the sea and shaving off slopes. Phase 1 gives the planner eyes: the scan already works, it only needs to be wired into `nextCell` and `plotGround`.
 
-### Дёшево и дорого
+### Cheap and expensive
 
-| Дёшево | Дорого |
+| Cheap | Expensive |
 |---|---|
-| скан диска (0,5 с на 500×500, повтор 40 мс) | `save-all flush` (≈1 с, I/O на сервере): не чаще раза в несколько минут, только перед основанием района или участка на краю |
-| классы, планы, стоимость ячеек | генерация чанков через `forceload` для нового места (10–40 с) |
-| запрет засыпки воды, апрон, стенки | генераторы вариантов (`walkout`, `stilts`) и новые типы: работа архитектора |
-| пирсы, набережная, лодки | пароход: ~15 дисплеев + `tp` раз в 1–3 с, только при игроке рядом |
-| | мосты длиной N (свой генератор, шов к улицам двух берегов) |
+| disk scan (0.5 s per 500×500, 40 ms on repeat) | `save-all flush` (≈1 s, server I/O): at most once every few minutes, only before founding a district or an edge plot |
+| classes, plans, cell costs | chunk generation via `forceload` for a new site (10–40 s) |
+| no water filling, apron, walls | variant generators (`walkout`, `stilts`) and new types: architect's work |
+| piers, promenade, boats | steamer: ~15 displays + a `tp` every 1–3 s, only with a player nearby |
+| | bridges of length N (own generator, seam to the streets on both banks) |
 
-### Риски
+### Risks
 
-- **Чтение region-файлов при записи.** Решено частичным чтением, повторами и кэшем по таймстампу (проверено под `save-all`). Данные на диске отстают от мира до `save-all`, но природа не меняется сама, а свои изменения мы знаем.
-- **Несгенерированные чанки** на краю города. Ячейки `unknown` не выделяются. Перед ростом к краю — `ensureGenerated` (forceload, ожидание статуса ≥ noise).
-- **Проточанки.** Высоты верны, деревьев и материала может не быть (`NO_TREES_YET`): лес на таких ячейках недооценивается. Для решений «лес/не лес» нужен статус ≥ `features`.
-- **Пороги классов** подобраны на трёх местах (тестовый город, долина реки, живой город). На горах (`jagged_peaks`, ущелья) их надо проверить; меняются в одном месте.
-- **Проходимость.** Лестницы, Treppengasse и сваи нужно прогонять через `tools/walkcheck.mjs` (вход с улицы) и проверять, что жители (`life.mjs`) и PostAuto (маршрут по кольцам) не застревают. PostAuto не ездит по лестницам: на швах ≥2 нужна остановка или объезд.
-- **Сущности.** Лодки дрейфуют в течении; пароход и парусники грузят чанки и команды. Флот работает только при игроке рядом, лодки — только в стоячей воде.
-- **Контракт генераторов.** Варианты обязаны быть детерминированными и совместимыми с этапами. Новые поля в `options` старые генераторы игнорируют, поэтому мост должен уметь подставлять сваи и цоколь сам (как сейчас `yardExtras`).
+- **Reading region files while they are being written.** Solved with partial reads, retries and a timestamp-based cache (verified under `save-all`). Data on disk lags behind the world until `save-all`, but nature does not change on its own, and we know our own changes.
+- **Ungenerated chunks** at the town edge. `unknown` cells are not allocated. Before growing toward the edge: `ensureGenerated` (forceload, wait for status ≥ noise).
+- **Proto-chunks.** Heights are correct, but trees and material may be missing (`NO_TREES_YET`): forest on such cells is underestimated. "Forest / not forest" decisions need status ≥ `features`.
+- **Class thresholds** were tuned on three sites (test town, river valley, live town). They need checking in mountains (`jagged_peaks`, gorges); they are changed in one place.
+- **Walkability.** Staircases, Treppengasse and stilts need to be run through `tools/walkcheck.mjs` (entry from the street), and we need to verify that villagers (`life.mjs`) and PostAuto (route along the rings) do not get stuck. PostAuto does not drive on stairs: seams ≥2 need a stop or a detour.
+- **Entities.** Boats drift with the current; the steamer and sailboats cost chunk loading and commands. The fleet runs only with a player nearby, boats only in still water.
+- **Generator contract.** Variants must be deterministic and compatible with stages. Old generators ignore new fields in `options`, so the bridge must be able to add stilts and a basement on its own (as `yardExtras` does now).
