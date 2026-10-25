@@ -228,7 +228,8 @@ async function setupWorld(firstConnect) {
   }
   fx.clear();
   renovator.reset();
-  if (!config.villagerAI) await cmd('execute as @e[type=minecraft:villager,tag=alps] run data merge entity @s {NoAI:1b}');
+  // NoAI also disables gravity, so frozen villagers can end up hanging in the air: keep both directions in sync.
+  await cmd(`execute as @e[type=minecraft:villager,tag=alps] run data merge entity @s {NoAI:${config.villagerAI ? 0 : 1}b}`);
   await features.emit('setup', firstConnect);
 }
 
