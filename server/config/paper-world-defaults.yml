@@ -62,13 +62,13 @@ chunks:
     snowball: -1
   fixed-chunk-inhabited-time: -1
   flush-regions-on-save: false
-  max-auto-save-chunks-per-tick: 24
+  max-auto-save-chunks-per-tick: 12
   prevent-moving-into-unloaded-chunks: false
 collisions:
   allow-player-cramming-damage: false
   allow-vehicle-collisions: true
   fix-climbing-bypassing-cramming-rule: false
-  max-entity-collisions: 8
+  max-entity-collisions: 2
   only-players-collide: false
 command-blocks:
   force-follow-perm-level: true
@@ -76,7 +76,7 @@ command-blocks:
 entities:
   armor-stands:
     do-collision-entity-lookups: true
-    tick: true
+    tick: false
   behavior:
     allow-spider-world-border-climbing: true
     baby-zombie-movement-modifier: 0.5
@@ -125,7 +125,7 @@ entities:
     zombie-villager-infection-chance: default
     zombies-target-turtle-eggs: true
   markers:
-    tick: true
+    tick: false
   mob-effects:
     immune-to-wither-effect:
       wither: true
@@ -241,7 +241,7 @@ environment:
   max-block-ticks: 65536
   max-fluid-ticks: 65536
   nether-ceiling-void-damage-height: disabled
-  optimize-explosions: false
+  optimize-explosions: true
   portal-create-radius: 16
   portal-search-radius: 128
   portal-search-vanilla-dimension-scaling: true
@@ -297,7 +297,7 @@ misc:
   max-leash-distance: default
   redstone-implementation: VANILLA
   show-sign-click-command-failure-msgs-to-player: false
-  update-pathfinding-on-block-update: true
+  update-pathfinding-on-block-update: false
 scoreboards:
   allow-non-player-entities-on-scoreboards: true
   use-vanilla-world-scoreboard-name-coloring: false
@@ -306,14 +306,16 @@ spawn:
 tick-rates:
   behavior:
     villager:
-      validatenearbypoi: -1
+      acquirepoi: 120
+      validatenearbypoi: 60
   container-update: 1
   dry-farmland: 1
   grass-spread: 1
   mob-spawner: 1
   sensor:
     villager:
-      secondarypoisensor: 40
+      nearestbedsensor: 80
+      secondarypoisensor: 80
   wet-farmland: 1
 unsupported-settings:
   disable-world-ticking-when-empty: false

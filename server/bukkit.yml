@@ -25,12 +25,12 @@ spawn-limits:
   monsters: 70
   animals: 10
   water-animals: 5
-  water-ambient: 20
+  water-ambient: 5
   water-underground-creature: 5
   axolotls: 5
-  ambient: 15
+  ambient: 2
 chunk-gc:
-  period-in-ticks: 600
+  period-in-ticks: 400
 ticks-per:
   animal-spawns: 400
   monster-spawns: 1

@@ -74,7 +74,7 @@ world-settings:
     seed-mineshaft: default
     seed-stronghold: default
     entity-tracking-range:
-      players: 128
+      players: 96
       animals: 96
       monsters: 96
       misc: 96
@@ -85,12 +85,12 @@ world-settings:
       entity: 50
     max-tnt-per-tick: 100
     entity-activation-range:
-      animals: 32
+      animals: 24
       monsters: 32
       raiders: 64
       misc: 16
       water: 16
-      villagers: 32
+      villagers: 24
       flying-monsters: 32
       wake-up-inactive:
         animals-max-per-tick: 4
@@ -99,7 +99,7 @@ world-settings:
         monsters-max-per-tick: 8
         monsters-every: 400
         monsters-for: 100
-        villagers-max-per-tick: 4
+        villagers-max-per-tick: 2
         villagers-every: 600
         villagers-for: 100
         flying-monsters-max-per-tick: 8
@@ -108,7 +108,7 @@ world-settings:
       villagers-work-immunity-after: 100
       villagers-work-immunity-for: 20
       villagers-active-for-panic: true
-      tick-inactive-villagers: true
+      tick-inactive-villagers: false
       ignore-spectators: false
     unload-frozen-chunks: false
     arrow-despawn-rate: 1200
@@ -141,8 +141,8 @@ world-settings:
       pitcherplant-modifier: 100
     thunder-chance: 100000
     merge-radius:
-      item: 0.5
-      exp: -1.0
+      item: 2.5
+      exp: 3.0
     hunger:
       jump-walk-exhaustion: 0.05
       jump-sprint-exhaustion: 0.2
