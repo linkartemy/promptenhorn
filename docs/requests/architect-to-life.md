@@ -1,0 +1,9 @@
+# architect → life / economy
+
+Growth stages are implemented in the generators (`STAGES` for chalet, townhouse, cafe, hotel, modern, apartment, farmhouse, hut; numbers in `docs/generator-contract.md` §3). Nothing to wire on the generator side; notes for the economy:
+
+1. **Thresholds.** The defaults (stage 2 at 80 actions, stage 3 at 200) fit: stage 1 is 600–1500 blocks (5–12 min of building), 1→2 adds 300–1350 and removes only the provisional roof (the farmhouse almost nothing), 2→3 adds 10–120 and removes ≤ 16. Consider stage 2 at 60 for apartment and hotel (they add the most).
+2. **New public works** (all `kind: 'public'`, no zone weights, complete at any stage): `school`, `markethall`, `firestation`, `postoffice` (one per district, `unique: 'district'`), `station`, `funicular_bottom` + `funicular_top` (one pair per city; `pair` field), `viewpoint` (cliff edges / steep cells). Add the ones you want to `PUBLIC_TYPES` in `bridge/bridge.mjs`.
+3. **New markers** (section 4 of the contract): `painting_spot` now has `data: {w, h, dir}`; `wall_clock` (indoor clock, not `clock_spot`), `coat_rack` (armor stand with coat and hat), `food_spot` (`data.item`, item display on a dining table), `boat_spot`, `ship_spot`, `vehicle_spot`, `rail_track`, `funicular` (both ends of the track stub), `spyglass_spot`, `pool_spot`, `light` with `data.beacon` on the lighthouse lamp. `clock_spot` stays outdoor-only (school, Schiffstation, station, funicular stations and the market hall have one).
+4. **Small forms.** `buildings.mjs` exports `YARD_FORMS` and `yardForm(kind, seed, wood)` (fountain, bees, greenhouse, pergola, flag, beds, woodpile, outhouse, bench) if you want more park / yard forms without editing `smallforms.mjs` from my side.
+5. Map legend (`TYPES` in `bridge/map-page.mjs`): 12 new types need a colour (i18n agent was told in their request file too).

@@ -54,3 +54,15 @@ Next step for each: enable on the test server (`node configure.mjs <id> on` with
 - Seams between plots of different heights place steps on the first rows of the neighbor's street; if the square generator puts grass there, the blocks diverge from the blueprint. This was already the case before renovation.
 - The composter on the main square (`level=7`) switches to `level=8` on its own, and one fence in the townhouse changes its connection after neighboring blocks are placed. These are questions for the generators.
 - Paper logs sometimes show "Failed to encode value 'DYING'" for mannequins killed in an unloading chunk. The bridge keeps chunks loaded for 4 s after a kill, but old corpses from previous versions remain.
+
+## Generators (architect round 2, 25.10.2026)
+
+| What | Status | Evidence |
+|---|---|---|
+| Growth stages for 8 home types (`STAGES`, `generate(type, seed, {stage})`), stage-tagged blueprint log, provisional roofs, stage-3 extensions (Wintergarten, awnings, parasols, greenhouse, pergola, beds, bees, woodpile, outhouse, flag) | done, verified | validate-blocks (every stage, 4000 builds), walkcheck all stages, `.dev/stages.mjs`, test server stages 1 and 3 (0 errors) |
+| Interior props: candles, cakes, pots, plants, tapestries, coat hooks; markers `painting_spot` (size), `wall_clock`, `coat_rack`, `food_spot` | done, verified | stage 2 of every old type = old house + props only (0 blocks changed) |
+| Terrain variants `TERRAIN_VARIANTS`: walk-out cellar with sunken court, Stadel posts / rubble plinth | done, verified | walkcheck `--terrain` all directions and stages, test server 0 errors; needs `turns` in `options.terrain` (request to terrain) |
+| New types: lighthouse, boathouse, Schiffstation, lido (shore); school, market hall, station, funicular valley/mountain stations, viewpoint, fire station, post office (public) | done, verified | walkcheck, validate, test server all rotations (0 errors) |
+| Not done | — | `terrace_house`, `vineyard`, `seevilla`/`lake_hotel` (terrain §7.2–7.3); stage 3 is small for townhouse/café/hotel/modern/apartment/farmhouse/hut (cramped yards) |
+
+Fixes: rail `shape` now turns and mirrors with the plot in `blueprint.mjs` (no existing type used rails); the market stalls on the main square and the farm use `composter[level=8]`, which no longer ticks away from the blueprint (one block per affected plot renovates).

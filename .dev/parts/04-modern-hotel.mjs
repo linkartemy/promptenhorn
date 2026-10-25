@@ -15,7 +15,7 @@ function modernGarden(bp, rng, { poolX, poolZ, path }) {
   for (const [x, z] of path) bp.set(x, 0, z, 'smooth_stone_slab[type=double]');
 }
 
-function modernCube(rng) {
+function modernCube(rng, options) {
   const bp = new Blueprint();
   const concrete = rng.pick(['white_concrete', 'white_concrete', 'smooth_quartz', 'light_gray_concrete']);
   const clad = rng.pick(['stripped_oak_log', 'stripped_spruce_log', 'stripped_pale_oak_log', 'stripped_dark_oak_log', 'stripped_birch_log']);
@@ -35,6 +35,8 @@ function modernCube(rng) {
   bp.fill(x1 + 5, 4, z2 + 1, x1 + 7, 4, z2 + 2, `${slabOf}[type=top]`);
   // Upper floor: cantilevered timber box with a ribbon window and concrete mullions.
   bp.fill(x1 - 1, 4, z1, x2, 4, z2 + 1, concrete);
+  // Growth: stage 1 is the glazed ground floor under this slab (a flat-roofed bungalow), stage 2 adds the box.
+  bp.stage = 2;
   bp.walls(x1 - 1, 5, z1, x2, 7, z2 + 1, `${clad}[axis=y]`);
   bp.fill(x1, 5, z2 + 1, x2 - 1, 6, z2 + 1, 'glass');
   for (const x of [x1 + 5, x1 + 10]) bp.fill(x, 5, z2 + 1, x, 6, z2 + 1, `${clad}[axis=y]`);
@@ -46,6 +48,7 @@ function modernCube(rng) {
   const hall = stairHall(bp, { axis: 'x', laneA: [z1 + 2], laneB: [z1 + 1], u0: x2 - 1, dir: -1, planes, wood: 'pale_oak' });
   const keepAt = (F) => [...hall.cells, ...(hall.ends[F] ?? [])];
   // Ground: bath in the core, kitchen and living in the hall.
+  bp.stage = 1;
   partition(bp, x1 + 1, z1 + 5, x1 + 3, z1 + 5, 1, 3, concrete, [[x1 + 3, z1 + 5]], 'pale_oak');
   furnish(bp, rng, { x1: x1 + 1, z1: z1 + 1, x2: x1 + 3, z2: z1 + 4, y: 1, h: 3 }, 'bath', [[x1 + 3, z1 + 4]], 'pale_oak');
   bp.set(x1 + 5, 1, z1 + 3, 'smoker[facing=south,lit=true]');
@@ -57,6 +60,7 @@ function modernCube(rng) {
   bp.set(x1 + 4, 2, z1 + 6, null);
   bp.door(x1 + 4, 1, z1 + 6, 'pale_oak', 'east');
   // Upper: two bedrooms and a hall in front of the stairs.
+  bp.stage = 2;
   const yU = 5;
   partition(bp, x1, z1 + 3, x1 + 4, z1 + 3, yU, 3, `${clad}[axis=y]`, [[x1 + 4, z1 + 3]], 'pale_oak');
   partition(bp, x1 + 5, z1 + 4, x1 + 5, z2, yU, 3, `${clad}[axis=y]`, [[x1 + 5, z1 + 4]], 'pale_oak');
@@ -91,6 +95,7 @@ function modernCube(rng) {
       bp.set(x, roofY + 1, z, solar ? 'daylight_detector' : 'moss_block');
       if (!solar && rng.chance(0.3)) bp.set(x, roofY + 2, z, rng.pick(['short_grass', 'fern', 'azalea', 'dandelion']));
     }
+  bp.stage = 1;
   modernGarden(bp, rng, { poolX: [10, 14], poolZ: [13, 15], path: [[x1 + 6, 12], [x1 + 6, 14], [x1 + 6, 16]] });
   broadTree(bp, 3, 14, 5, 2, 'birch');
   for (let z = 0; z <= 16; z++) {
@@ -99,11 +104,20 @@ function modernCube(rng) {
     bp.setIfEmpty(16, 1, z, 'oak_leaves[persistent=true]');
   }
   sprinkleFlowers(bp, rng, 1, 11, 15, 16, 0.12, ['short_grass', 'fern', 'short_grass', 'cornflower', 'oxeye_daisy']);
-  if (rng.chance(0.5)) bp.mirrorX();
+  const mirror = rng.chance(0.5);
+  bp.overlay(1, 1, (v) => {
+    for (const [x, z] of perimeter(x1 - 1, z1, x2, z2 + 1)) v.set(x, 5, z, `${slabOf}[type=bottom]`);
+    stage1Bed(v, rng, [[{ x1: x1 + 1, z1: z1 + 6, x2: x1 + 3, z2: z2 - 1, y: 1, h: 3 }, [[x1 + 3, z1 + 6]]], [{ x1: x1 + 5, z1: z1 + 4, x2: x2 - 1, z2: z2 - 1, y: 1, h: 3 }, [[x1 + 6, z2 - 1], [x1 + 5, z1 + 6]]]], 'pale_oak');
+  });
+  bp.stage = 3;
+  growYard(bp, rng, { house: [x1 - 1, z1, x2, z2 + 1], door: [x1 + 6, z2 + 1], wood: WOOD('pale_oak'), prefer: ['pergola', 'beds', 'bench', 'flag'], max: 2 });
+  bp.stage = 1;
+  decorate(bp, rng);
+  if (mirror) bp.mirrorX();
   return bp;
 }
 
-function modernGable(rng) {
+function modernGable(rng, options) {
   const bp = new Blueprint();
   const kit = rng.pick([
     { wall: 'stripped_spruce_log[axis=y]', roof: ROOFS.spruce },
@@ -117,8 +131,11 @@ function modernGable(rng) {
   const ix1 = x1 + 1, ix2 = x2 - 1, iz1 = z1 + 1, iz2 = z2 - 1;
   bp.fill(x1 - 1, 0, z1 - 1, x2 + 1, 0, z2 + 1, 'smooth_stone');
   bp.fill(ix1, 0, iz1, ix2, 0, iz2, 'pale_oak_planks');
-  bp.walls(x1, 1, z1, x2, 7, z2, kit.wall);
+  bp.walls(x1, 1, z1, x2, 4, z2, kit.wall);
+  bp.atStageDraw(2, () => bp.walls(x1, 5, z1, x2, 7, z2, kit.wall));
   bp.fill(ix1, 4, iz1, ix2, 4, iz2, 'pale_oak_planks');
+  // Growth: stage 1 is the ground floor with a flat roof (parapet drawn at the end), stage 2 the gabled house.
+  bp.stage = 2;
   const at = roof(bp, { x1, x2, z1, z2, y: 8, mat: kit.roof, n: INF, s: INF });
   closeUnder(bp, at, perimeter(x1, z1, x2, z2), 8, kit.wall, kit.roof);
   // Big gable glazing (a gallery under the roof) and picture windows with deep reveals.
@@ -127,11 +144,12 @@ function modernGable(rng) {
   for (let x = cx - 2; x <= cx + 2; x++) bp.set(x, 5, z2 + 1, 'glass_pane');
   const holes = [[x1 + 1, 1, z2, 'south', 3, 2], [x2 - 2, 2, z2, 'south', 2, 2], [x1, 5, z1 + 2, 'west', 2, 2], [x1, 1, z1 + 5, 'west', 3, 2],
     [x2, 2, z1 + 2, 'east', 2, 2], [x2, 5, z1 + 5, 'east', 3, 2], [cx - 1, 2, z1, 'north', 3, 2], [cx + 2, 5, z1, 'north', 2, 2]];
-  for (const [x, y, z, face, w, h] of holes) win(bp, rng, x, y, z, face, { w, h, glass: 'glass' });
+  for (const [x, y, z, face, w, h] of holes) bp.atStageDraw(y < 4 ? 1 : 2, () => win(bp, rng, x, y, z, face, { w, h, glass: 'glass' }));
+  bp.stage = 1;
   bp.door(x2 - 3, 1, z2, 'dark_oak', 'south');
   bp.set(x2 - 3, 3, z2, 'glass');
   // Stair along the east wall; bath behind a wall downstairs; bedroom and study up on the gallery.
-  const hall = stairHall(bp, { axis: 'z', laneA: [ix2 - 1], laneB: [ix2], u0: iz2 - 1, dir: -1, planes: [0, 4], wood: 'pale_oak' });
+  const hall = bp.atStageDraw(2, () => stairHall(bp, { axis: 'z', laneA: [ix2 - 1], laneB: [ix2], u0: iz2 - 1, dir: -1, planes: [0, 4], wood: 'pale_oak' }));
   const keep = [...hall.cells, ...(hall.ends[0] ?? []), ...(hall.ends[4] ?? []), [x2 - 3, iz2]];
   partition(bp, ix1, iz1 + 2, ix1 + 2, iz1 + 2, 1, 3, kit.wall, [[ix1 + 2, iz1 + 2]], 'pale_oak');
   furnish(bp, rng, { x1: ix1, z1: iz1, x2: ix1 + 2, z2: iz1 + 1, y: 1, h: 3 }, 'bath', [[ix1 + 2, iz1 + 1]], 'pale_oak', { items: ['tub', 'toilet', 'sink'] });
@@ -140,8 +158,10 @@ function modernGable(rng) {
   bp.set(ix1 + 3, 1, iz1, 'smooth_quartz');
   furnish(bp, rng, { x1: ix1, z1: iz1 + 3, x2: ix2 - 2, z2: iz2, y: 1, h: 3 }, 'living', [...keep, [ix1 + 2, iz1 + 3]], 'pale_oak', { items: ['sofa', 'chiseled', 'plant', 'counter', 'plant'], table: true });
   furnish(bp, rng, { x1: ix1 + 3, z1: iz1, x2: ix2 - 2, z2: iz1 + 2, y: 1, h: 3 }, 'kitchen', keep, 'pale_oak', { items: ['counter', 'crafting', 'chest'], table: false });
+  bp.stage = 2;
   furnish(bp, rng, { x1: ix1, z1: iz1, x2: ix2 - 2, z2: iz2, y: 5, h: 3 }, 'bedroom', [...keep, ...(hall.ends[4] ?? [])], 'pale_oak', { items: ['bed', 'bed2', 'chest', 'chiseled', 'plant', 'wardrobe'] });
   // Terrace deck with loungers and a table.
+  bp.stage = 1;
   bp.fill(x1, 0, z2 + 2, x2, 0, z2 + 4, 'pale_oak_planks');
   for (const x of [x1 + 1, x1 + 3]) {
     bp.set(x, 1, z2 + 3, 'white_bed[facing=north,part=head]');
@@ -155,17 +175,26 @@ function modernGable(rng) {
   broadTree(bp, 15, 2, 4, 1, rng.pick(['oak', 'birch']));
   for (let x = 0; x <= 16; x++) if (Math.abs(x - (x2 - 3)) > 0) bp.setIfEmpty(x, 1, 16, rng.chance(0.7) ? 'azalea' : 'flowering_azalea');
   sprinkleFlowers(bp, rng, 0, 0, 16, 16, 0.08, ['short_grass', 'fern', 'short_grass', 'cornflower']);
-  if (rng.chance(0.5)) bp.mirrorX();
+  const mirror = rng.chance(0.5);
+  bp.overlay(1, 1, (v) => {
+    for (const [x, z] of perimeter(x1, z1, x2, z2)) v.set(x, 5, z, 'smooth_stone_slab[type=bottom]');
+    stage1Bed(v, rng, [[{ x1: ix1, z1: iz1 + 3, x2: ix2 - 2, z2: iz2, y: 1, h: 3 }, [...keep, [ix1 + 2, iz1 + 3]]], [{ x1: ix2 - 1, z1: iz1, x2: ix2, z2: iz2, y: 1, h: 3 }, [[ix2 - 1, iz2], [ix2, iz2]]]], 'pale_oak');
+  });
+  bp.stage = 3;
+  growYard(bp, rng, { house: [x1, z1, x2, z2 + 4], door: [x2 - 3, z2 + 1], wood: WOOD('pale_oak'), prefer: ['greenhouse', 'pergola', 'beds', 'flag'], max: 2 });
+  bp.stage = 1;
+  decorate(bp, rng);
+  if (mirror) bp.mirrorX();
   return bp;
 }
 
-export function modern(rng) {
-  return rng.chance(0.5) ? modernCube(rng) : modernGable(rng);
+export function modern(rng, options = {}) {
+  return rng.chance(0.5) ? modernCube(rng, options) : modernGable(rng, options);
 }
 
 // ================================================================ grand hotel (Belle Époque)
 
-export function hotel(rng) {
+export function hotel(rng, options = {}) {
   const bp = new Blueprint();
   const x1 = 1, x2 = 15, z1 = 3, z2 = 12, cx = 8;
   const plaster = rng.pick(['smooth_sandstone', 'calcite', 'white_terracotta', 'mushroom_stem', 'end_stone_bricks']);
@@ -194,14 +223,23 @@ export function hotel(rng) {
   bp.fill(x1, 0, z1, x2, 0, z2, 'polished_andesite');
   bp.fill(6, 0, 12, 10, 0, 13, 'polished_andesite');
   bp.fill(x1 + 1, 0, z1 + 1, x2 - 1, 0, z2 - 1, (x, y, z) => ((x + z) % 2 ? 'polished_andesite' : 'smooth_stone'));
-  bp.walls(x1, 1, z1, x2, top, z2, wallFn);
-  bp.walls(6, 1, 12, 10, top, 13, wallFn);
-  bp.fill(7, 1, 12, 9, top, 12, null);
+  // Growth: stage 1 = lobby and the first guest floor under a provisional mansard, stage 2 = the grand hotel,
+  // stage 3 = garden extras behind. Walls are drawn in two height bands (same order of rng use as one call).
+  const top1 = g + 4;
+  const st = (f) => (f === 0 ? 1 : 2);
+  bp.walls(x1, 1, z1, x2, top1, z2, wallFn);
+  bp.atStageDraw(2, () => bp.walls(x1, top1 + 1, z1, x2, top, z2, wallFn));
+  bp.walls(6, 1, 12, 10, top1, 13, wallFn);
+  bp.atStageDraw(2, () => bp.walls(6, top1 + 1, 12, 10, top, 13, wallFn));
+  bp.fill(7, 1, 12, 9, top1, 12, null);
+  bp.atStageDraw(2, () => bp.fill(7, top1 + 1, 12, 9, top, 12, null));
   for (let f = 0; f <= floors; f++) {
     const y = f === floors ? top + 1 : yb(f);
+    bp.stage = f <= 1 ? 1 : 2;
     bp.fill(x1 + 1, y, z1 + 1, x2 - 1, y, z2 - 1, 'dark_oak_planks');
     bp.fill(7, y, 12, 9, y, 12, 'dark_oak_planks');
   }
+  bp.stage = 1;
   // Ground floor: windows, portal with glass sidelights, marquee.
   for (const x of [2, 4, 12, 14]) win(bp, rng, x, 2, z2, 'south', { h: 2, lintel: trim.block });
   for (const z of [5, 8, 11]) {
@@ -220,6 +258,7 @@ export function hotel(rng) {
   const cols = [2, 4, 7, 9, 12, 14, 8];
   for (let f = 0; f < floors; f++) {
     const y = yb(f) + 1;
+    bp.stage = st(f);
     for (const x of cols) {
       const z = front(x);
       if (inRis(x) && f >= 1) {
@@ -254,6 +293,7 @@ export function hotel(rng) {
     }
   }
   // Cornice.
+  bp.stage = 2;
   for (const [x, z] of perimeter(x1, z1, x2, z2)) {
     const f = z === z1 ? 'south' : z === z2 ? 'north' : x === x1 ? 'east' : 'west';
     const [dx, dz] = DIR[OPP[f]];
@@ -293,7 +333,8 @@ export function hotel(rng) {
   // ---- Interior. Grand staircase (two 2-wide lanes) in the east wing with a hall beside it;
   // upstairs a corridor along the back with two guest rooms per floor facing the street; staff attic by ladder.
   const planes = [0, yb(0), yb(1), yb(2)];
-  const hall = stairHall(bp, { axis: 'z', laneA: [11, 12], laneB: [13, 14], u0: 11, dir: -1, planes, wood: 'dark_oak' });
+  bp.stage = 1;
+  const hall = stairHall(bp, { axis: 'z', laneA: [11, 12], laneB: [13, 14], u0: 11, dir: -1, planes, wood: 'dark_oak', stageOf: st });
   const keepAt = (F) => [...hall.cells, ...(hall.ends[F] ?? [])];
   // Lobby: reception desk, lounge, restaurant.
   for (let x = 2; x <= 5; x++) bp.set(x, 1, 4, x === 5 ? 'dark_oak_planks' : 'dark_oak_slab[type=top]');
@@ -313,6 +354,7 @@ export function hotel(rng) {
   for (let f = 0; f < floors; f++) {
     const F = yb(f);
     const y = F + 1;
+    bp.stage = st(f);
     partition(bp, 2, 6, 9, 6, y, 3, plaster, roomsX.map(([a]) => [a + 1, 6]), 'dark_oak');
     partition(bp, 5, 7, 5, 11, y, 3, plaster, [], 'dark_oak');
     partition(bp, 9, 7, 9, 11, y, 3, plaster, [], 'dark_oak');
@@ -325,11 +367,13 @@ export function hotel(rng) {
     light(bp, { x1: 10, z1: 8, x2: 10, z2: 9, y });
   }
   // Staff attic under the mansard, by ladder from the top corridor.
+  bp.stage = 2;
   ladderUp(bp, 4, 5, 'north', yb(2) + 1, top + 1);
   furnish(bp, rng, { x1: 6, z1: 6, x2: 12, z2: 9, y: top + 2, h: 3 }, 'storage', [[4, 5], [5, 5], [4, 6]], 'spruce', { items: ['bed', 'chest', 'barrel', 'barrel'] });
   light(bp, { x1: 4, z1: 6, x2: 8, z2: 8, y: top + 2 });
 
   // Forecourt: red carpet, planters, lamps, flags, café tables.
+  bp.stage = 1;
   bp.fill(0, 0, 13, 16, 0, 16, (x, y, z) => (inRis(x) && z <= 15 ? 'polished_andesite' : (x + z) % 2 ? 'smooth_stone' : 'polished_andesite'));
   bp.fill(0, 0, 0, 16, 0, 2, 'grass_block');
   for (let z = 14; z <= 16; z++) bp.set(cx, 1, z, 'red_carpet');
@@ -351,5 +395,30 @@ export function hotel(rng) {
     for (const f of ['east', 'west']) bp.setIfEmpty(tx + DIR[f][0], 1, 15, `dark_oak_stairs[facing=${f},half=bottom]`);
   }
   sprinkleFlowers(bp, rng, 0, 0, 16, 2, 0.2, ['red_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy']);
+  bp.overlay(1, 1, (v) => {
+    for (const [x, z] of perimeter(x1, z1, x2, z2)) {
+      const f = z === z1 ? 'south' : z === z2 ? 'north' : x === x1 ? 'east' : 'west';
+      const [dx, dz] = DIR[OPP[f]];
+      if (!(z === z2 && inRis(x))) v.setIfEmpty(x + dx, top1, z + dz, `${trim.stairs}[facing=${f},half=top]`);
+    }
+    for (let x = 6; x <= 10; x++) {
+      v.set(x, top1, 14, `${trim.stairs}[facing=north,half=top]`);
+      v.set(x, top1 + 1, 13, `${mansard.slab}[type=bottom]`);
+    }
+    roof(v, { x1, x2, z1, z2, y: top1 + 1, mat: mansard, kind: 'steep', cap: 2 });
+    for (const x of [2, 4, 12, 14]) {
+      for (const z of [z1, z2]) {
+        v.set(x - 1, top1 + 2, z, mansard.block);
+        v.set(x + 1, top1 + 2, z, mansard.block);
+        v.set(x, top1 + 2, z, 'glass_pane');
+      }
+      v.set(x, top1 + 3, z2, `${trim.slab}[type=bottom]`);
+    }
+    ladderUp(v, 4, 5, 'north', yb(0) + 1, top1 + 1);
+  });
+  bp.stage = 3;
+  growYard(bp, rng, { house: [x1, z1, x2, z2], wood: WOOD('dark_oak'), prefer: ['fountain', 'bench', 'flag', 'bench'], max: 3 });
+  bp.stage = 1;
+  decorate(bp, rng);
   return bp;
 }

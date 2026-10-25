@@ -92,8 +92,8 @@ function png({ W, H, img }) {
 
 const [type, seed = 'a', turns = '0', out] = process.argv.slice(2);
 const rng = rngFrom(seed);
-const bp = type === 'square' ? square(rng) : type === 'plaza' ? plaza(rng) : BUILDINGS[type](rngFrom(`${seed}:${type}`));
-const list = bp.toBuildList({ turns: Number(turns), size: 21, offset: 2 });
+const bp = type === 'square' ? square(rng) : type === 'plaza' ? plaza(rng) : BUILDINGS[type](rngFrom(`${seed}:${type}`), { ...(process.env.STAGE ? { stage: Number(process.env.STAGE) } : {}), ...(process.env.TERRAIN ? { terrain: JSON.parse(process.env.TERRAIN) } : {}) }); // STAGE=n, TERRAIN='{...}' env
+const list = bp.toBuildList({ turns: Number(turns), size: 21, offset: 2 }).filter((b) => !/^minecraft:(cave_)?air$/.test(b.block));
 const file = out ?? `preview-${type}-${seed}.png`;
 fs.writeFileSync(file, png(render(list, 21)));
 console.log(`${type}: ${list.length} blocks -> ${file}`);

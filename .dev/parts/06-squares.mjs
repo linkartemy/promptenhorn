@@ -16,7 +16,7 @@ function marketStall(bp, rng, x0, z0, face) {
     for (let x = x0; x <= x0 + 2; x++) bp.set(x, 4, z, `${(x + z) % 2 ? colA : colB}_wool`);
   }
   bp.set(backX, 1, z0 + 1, rng.pick(['chest[facing=' + face + ']', 'barrel[facing=up]']));
-  bp.set(x0 + 1, 1, z0 + 1, rng.pick(['hay_block[axis=y]', 'barrel[facing=up]', 'composter[level=7]']));
+  bp.set(x0 + 1, 1, z0 + 1, rng.pick(['hay_block[axis=y]', 'barrel[facing=up]', 'composter[level=8]']));
   bp.set(x0 + 1, 2, z0 + 1, rng.pick(['potted_red_tulip', 'pumpkin', 'melon', 'cake']));
   bp.set(frontX + toFront[0], 1, z0 + 2, rng.pick(['potted_poppy', 'decorated_pot[facing=south]', 'hay_block[axis=y]']));
   bp.set(x0 + 1, 3, z0 + 1, 'lantern[hanging=true]');

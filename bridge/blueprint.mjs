@@ -36,9 +36,17 @@ export function rngFrom(seedText) {
 // Blocks that need support or attach to neighbours: placed in a second pass,
 // after every structural block, so nothing pops off while the house goes up.
 const DECOR =
-  /lantern|torch|flower_pot|potted_|_door\b|trapdoor|banner|sign|vine|leaves|carpet|button|lever|bell|candle|campfire|lightning_rod|chain|pressure_plate|_bed\b|cake|ladder|lily_pad|azalea\b|rose_bush|lilac|peony|sunflower|large_fern|tall_grass|short_grass|bush|petals|wildflowers|leaf_litter|wheat|carrots|potatoes|beetroots|sapling|snow\b|golem_statue|end_rod|tripwire_hook|_shelf\b|_bars\b|^minecraft:(poppy|dandelion|cornflower|oxeye_daisy|azure_bluet|allium|blue_orchid|red_tulip|white_tulip|pink_tulip|orange_tulip|lily_of_the_valley|fern|torchflower|water|daylight_detector|iron_bars)\b/;
+  /lantern|torch|flower_pot|potted_|_door\b|trapdoor|banner|sign|vine|leaves|carpet|button|lever|bell|candle|campfire|lightning_rod|chain|pressure_plate|_bed\b|cake|ladder|lily_pad|azalea\b|rose_bush|lilac|peony|sunflower|large_fern|tall_grass|short_grass|bush|petals|wildflowers|leaf_litter|wheat|carrots|potatoes|beetroots|sapling|snow\b|golem_statue|end_rod|tripwire_hook|(^|:|_)rail|_shelf\b|_bars\b|^minecraft:(poppy|dandelion|cornflower|oxeye_daisy|azure_bluet|allium|blue_orchid|red_tulip|white_tulip|pink_tulip|orange_tulip|lily_of_the_valley|fern|torchflower|water|daylight_detector|iron_bars)\b/;
 
 const CW_FACING = { north: 'east', east: 'south', south: 'west', west: 'north' };
+// Rail shapes under a clockwise quarter turn / an east-west mirror.
+const CW_RAIL = {
+  north_south: 'east_west', east_west: 'north_south', ascending_north: 'ascending_east', ascending_east: 'ascending_south',
+  ascending_south: 'ascending_west', ascending_west: 'ascending_north', north_east: 'south_east', south_east: 'south_west',
+  south_west: 'north_west', north_west: 'north_east',
+};
+const MIRROR_RAIL = { ascending_east: 'ascending_west', ascending_west: 'ascending_east', north_east: 'north_west', north_west: 'north_east', south_east: 'south_west', south_west: 'south_east' };
+const isRail = (name) => /rail$/.test(name);
 
 /** Rotates a block string `name[props]{nbt}` by `turns` clockwise quarter turns. */
 export function rotateBlock(block, turns) {
@@ -58,6 +66,11 @@ export function rotateBlock(block, turns) {
       }
       if (k === 'axis' && turns % 2 === 1 && (v === 'x' || v === 'z')) return `axis=${v === 'x' ? 'z' : 'x'}`;
       if (k === 'rotation') return `rotation=${(Number(v) + 4 * turns) % 16}`;
+      if (k === 'shape' && isRail(m[1]) && CW_RAIL[v]) {
+        let r = v;
+        for (let i = 0; i < turns; i++) r = CW_RAIL[r];
+        return `shape=${r}`;
+      }
       return p;
     });
   return `${m[1]}[${props.join(',')}]${m[3] ?? ''}`;
@@ -74,6 +87,7 @@ export function mirrorBlock(block) {
     .split(',')
     .map((p) => {
       const [k, v] = p.split('=');
+      if (k === 'shape' && isRail(m[1])) return MIRROR_RAIL[v] ? `shape=${MIRROR_RAIL[v]}` : p;
       if (k === 'facing' || k === 'hinge' || k === 'shape' || k === 'type' || k === 'side_chain') return MIRROR_X[v] ? `${k}=${MIRROR_X[v]}` : p;
       if (k === 'rotation') return `rotation=${(16 - Number(v)) % 16}`;
       if (k === 'east') return `west=${v}`;
@@ -112,6 +126,7 @@ const NOT_STURDY = new RegExp([
 export function sturdyToward(block, dir) {
   if (!block) return false;
   const n = blockName(block);
+  if (n === 'air' || n === 'cave_air') return false; // explicit air: digging below the lot surface
   const p = blockProps(block);
   if (/_stairs$/.test(n)) return p.facing === dir && (p.shape ?? 'straight') === 'straight';
   if (/_slab$/.test(n)) return p.type === 'double';
@@ -250,7 +265,13 @@ export class Blueprint {
       for (let i = 0; i < t; i++) [x, z] = [size - 1 - z, x];
       let facing = m.facing;
       if (facing) for (let i = 0; i < t; i++) facing = CW_FACING[facing] ?? facing;
-      out.push({ ...m, x, z, ...(facing ? { facing } : {}) });
+      let data = m.data;
+      if (data?.dir && CW_FACING[data.dir]) {
+        let dir = data.dir;
+        for (let i = 0; i < t; i++) dir = CW_FACING[dir];
+        data = { ...data, dir };
+      }
+      out.push({ ...m, x, z, ...(facing ? { facing } : {}), ...(data ? { data } : {}) });
     }
     return out;
   }
@@ -262,8 +283,29 @@ export class Blueprint {
       if (b == null) this.blocks.delete(key);
       else this.blocks.set(key, b);
     }
+    if (this.tx) this.tx.push([key, this.blocks.get(key), this.ever.has(key)]);
     this.log.push([key, b, this.stage, this.until]);
     if (b != null) this.ever.add(key);
+  }
+
+  /** Starts a tentative change (furniture that may not fit): rollback() undoes it without a trace in the log. */
+  begin() {
+    this.tx = [];
+    this.txLog = this.log.length;
+  }
+
+  commit() {
+    this.tx = null;
+  }
+
+  rollback() {
+    for (const [key, prev, had] of (this.tx ?? []).reverse()) {
+      if (prev == null) this.blocks.delete(key);
+      else this.blocks.set(key, prev);
+      if (!had) this.ever.delete(key);
+    }
+    this.log.length = this.txLog ?? this.log.length;
+    this.tx = null;
   }
 
   get(x, y, z) {
@@ -288,7 +330,10 @@ export class Blueprint {
     const mb = (b) => (b == null ? b : memo.get(b) ?? (memo.set(b, mirrorBlock(b)), memo.get(b)));
     this.log = this.log.map(([k, b, s, u]) => [flip(k), mb(b), s, u]);
     this.ever = new Set([...this.ever].map(flip));
-    this.markers = this.markers.map((m) => ({ ...m, x: axis - m.x, ...(m.facing ? { facing: MIRROR_X[m.facing] ?? m.facing } : {}) }));
+    this.markers = this.markers.map((m) => ({
+      ...m, x: axis - m.x, ...(m.facing ? { facing: MIRROR_X[m.facing] ?? m.facing } : {}),
+      ...(m.data?.dir ? { data: { ...m.data, dir: MIRROR_X[m.data.dir] ?? m.data.dir } } : {}),
+    }));
     return this;
   }
 

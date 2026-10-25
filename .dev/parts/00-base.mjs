@@ -1,7 +1,7 @@
 // Swiss-style procedural buildings. Each generator draws into a 17x17 local frame
 // (x, z in 0..16; y = 0 is the ground surface, the street is at z > 16 — the front faces +z / south).
 // square() and plaza() may use the whole 21x21 frame (-2..18) including the street ring.
-import { Blueprint, rngFrom, sturdyToward, isPaneLike, blockName } from './blueprint.mjs';
+import { Blueprint, rngFrom, sturdyToward, isPaneLike, blockName, blockProps } from './blueprint.mjs';
 
 export const INNER = 17;
 

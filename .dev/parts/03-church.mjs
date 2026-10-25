@@ -243,6 +243,8 @@ export function church(rng) {
     lamp(bp, 11, 15, 3);
   }
   sprinkleFlowers(bp, rng, 1, 1, 15, 15, 0.06);
-  if (rng.chance(0.5)) bp.mirrorX();
+  const mirror = rng.chance(0.5);
+  decorate(bp, rng);
+  if (mirror) bp.mirrorX();
   return bp;
 }

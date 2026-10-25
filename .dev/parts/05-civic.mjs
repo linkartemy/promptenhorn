@@ -117,12 +117,13 @@ export function clocktower(rng) {
   bench(bp, 3, 7, 'west', 3, 'spruce');
   lamp(bp, 5, 14, 3, 'double');
   lamp(bp, 11, 1, 3, 'double');
+  decorate(bp, rng);
   return bp;
 }
 
 // ================================================================ cooperative apartment block (Genossenschaft)
 
-export function apartment(rng) {
+export function apartment(rng, options = {}) {
   const bp = new Blueprint();
   const x1 = 2, x2 = 14, z1 = 3, z2 = 11, cx = 8;
   const n = rng.int(4, 6);
@@ -144,9 +145,13 @@ export function apartment(rng) {
     const a = isFront ? x : z;
     return (a + 2 * (s % 2)) % 4 === 0 ? timber : 'glass_pane';
   };
+  // Growth: stage 1 = entrance hall and the first two flats (three storeys) under a flat roof, stage 2 = all storeys.
+  const k1 = 2;
+  const st = (s) => (s <= k1 ? 1 : 2);
   bp.fill(x1, 0, z1, x2, 0, z2, 'smooth_stone');
-  bp.walls(x1, 1, z1, x2, top, z2, cell);
-  for (let s = 1; s <= n; s++) bp.fill(x1 + 1, 3 * s, z1 + 1, x2 - 1, 3 * s, z2 - 1, s === n ? concrete : `${wood}_planks`);
+  bp.walls(x1, 1, z1, x2, 3 * (k1 + 1), z2, cell);
+  bp.atStageDraw(2, () => bp.walls(x1, 3 * (k1 + 1) + 1, z1, x2, top, z2, cell));
+  for (let s = 1; s <= n; s++) bp.atStageDraw(s <= k1 + 1 ? 1 : 2, () => bp.fill(x1 + 1, 3 * s, z1 + 1, x2 - 1, 3 * s, z2 - 1, s === n ? concrete : `${wood}_planks`));
   bp.fill(x1 + 1, 0, z1 + 1, x2 - 1, 0, z2 - 1, `${wood}_planks`);
   // Entrance: glass door with glazed sidelights and a canopy.
   bp.fill(cx - 2, 1, z2, cx + 2, 2, z2, 'glass');
@@ -159,7 +164,7 @@ export function apartment(rng) {
   bp.set(cx + 1, 2, z2 + 2, 'lantern[hanging=true]');
   // Stair core (two lanes along the back wall) from the lobby up to the roof garden.
   const planes = Array.from({ length: n + 1 }, (_, s) => 3 * s);
-  const core = stairHall(bp, { axis: 'x', laneA: [5], laneB: [4], u0: 10, dir: -1, planes, wood });
+  const core = stairHall(bp, { axis: 'x', laneA: [5], laneB: [4], u0: 10, dir: -1, planes, wood, stageOf: (i) => st(i + 1) });
   const balconies = (s) => {
     const ranges = s % 2 ? [[x1 + 1, cx - 1]] : [[cx + 1, x2 - 1]];
     if (n <= 5 || s === n - 1) ranges.push(s % 2 ? [cx + 2, x2 - 1] : [x1 + 1, cx - 2]);
@@ -167,6 +172,7 @@ export function apartment(rng) {
   };
   for (let s = 0; s < n; s++) {
     const y = 3 * s + 1;
+    bp.stage = st(s);
     // Stairwell walls with the flat's front door; bedroom and bathroom walls.
     partition(bp, 5, 4, 5, 6, y, 2, concrete);
     partition(bp, 11, 4, 11, 6, y, 2, concrete);
@@ -192,6 +198,7 @@ export function apartment(rng) {
   // Staggered balconies with French doors.
   for (let s = 1; s < n; s++) {
     const y = 3 * s;
+    bp.stage = st(s);
     for (const [a, b] of balconies(s)) {
       const cells = [];
       for (let x = a; x <= b; x++) for (let k = 1; k <= 2; k++) cells.push([x, z2 + k]);
@@ -206,6 +213,7 @@ export function apartment(rng) {
     }
   }
   // Roof: stair house over the core, parapet, green roof with solar panels.
+  bp.stage = 2;
   bp.walls(5, top + 1, 3, 11, top + 3, 7, concrete);
   bp.fill(5, top + 4, 3, 11, top + 4, 7, concrete);
   bp.set(cx, top + 1, 7, null);
@@ -222,6 +230,7 @@ export function apartment(rng) {
       if (!solar && rng.chance(0.3)) bp.set(x, top + 2, z, rng.pick(['azalea', 'flowering_azalea', 'short_grass', 'fern', 'short_grass', 'dandelion', 'cornflower']));
     }
   // Shared garden: lawn, birches, raised beds, sandpit, bench.
+  bp.stage = 1;
   for (let z = z2 + 1; z <= 16; z++) bp.set(cx, 0, z, 'smooth_stone_slab[type=double]');
   broadTree(bp, 2, 16, 4, 2, 'birch');
   broadTree(bp, 14, 16, 4, 1, 'birch');
@@ -234,13 +243,24 @@ export function apartment(rng) {
   for (const [x, z] of [[4, 15], [4, 16], [7, 15], [7, 16]]) bp.setIfEmpty(x, 1, z, 'birch_slab[type=bottom]');
   bench(bp, 10, 16, 'south', 2, wood);
   sprinkleFlowers(bp, rng, 0, 12, 16, 16, 0.12, ['short_grass', 'dandelion', 'oxeye_daisy', 'short_grass']);
-  if (rng.chance(0.5)) bp.mirrorX();
+  const mirror = rng.chance(0.5);
+  bp.overlay(1, 1, (v) => {
+    const yr = 3 * (k1 + 1);
+    v.fill(x1 + 1, yr, z1 + 1, x2 - 1, yr, z2 - 1, concrete);
+    for (const [x, z] of perimeter(x1, z1, x2, z2)) v.set(x, yr + 1, z, `${slabOf}[type=bottom]`);
+    for (let x = cx + 1; x < x2 - 1; x++) for (let z = z1 + 2; z < z2 - 1; z += 2) v.set(x, yr + 1, z, 'daylight_detector');
+  });
+  bp.stage = 3;
+  growYard(bp, rng, { house: [x1, z1, x2, z2 + 2], door: [cx, z2 + 1], wood: WOOD(wood), prefer: ['pergola', 'bench', 'beds', 'flag'], max: 2 });
+  bp.stage = 1;
+  decorate(bp, rng);
+  if (mirror) bp.mirrorX();
   return bp;
 }
 
 // ================================================================ Emmental farmhouse
 
-export function farmhouse(rng) {
+export function farmhouse(rng, options = {}) {
   const bp = new Blueprint();
   const X1 = 1, X2 = 11, Z1 = 1, Z2 = 13, cx = 6;
   const zb = 6; // wall between the barn (behind) and the living part (front)
@@ -251,18 +271,24 @@ export function farmhouse(rng) {
   const y0 = 4;
   const board = `${tw.stripped}[axis=y]`;
 
-  bp.fill(X1, 0, Z1, X2, 0, Z2, 'cobblestone');
+  // Growth: stage 1 = the living part alone under the front half of the same roof; stage 2 adds the barn behind
+  // (and the roof grows backwards over it); stage 3 = garden beds, bees and a woodpile.
+  bp.fill(X1, 0, zb, X2, 0, Z2, 'cobblestone');
+  bp.atStageDraw(2, () => bp.fill(X1, 0, Z1, X2, 0, zb - 1, 'cobblestone'));
   bp.fill(X1 + 1, 0, zb + 1, X2 - 1, 0, Z2 - 1, tw.planks);
-  bp.fill(X1 + 1, 0, Z1 + 1, X2 - 1, 0, zb - 1, (x, y, z) => ((x * 7 + z * 3) % 5 ? 'coarse_dirt' : 'packed_mud'));
+  bp.atStageDraw(2, () => bp.fill(X1 + 1, 0, Z1 + 1, X2 - 1, 0, zb - 1, (x, y, z) => ((x * 7 + z * 3) % 5 ? 'coarse_dirt' : 'packed_mud')));
   // Living part: stone plinth, horizontal log walls. Barn: vertical boards.
   bp.walls(X1, 1, zb, X2, 4, Z2, (x, y, z) => (y === 1 ? 'stone_bricks' : (x === X1 || x === X2) && (z === zb || z === Z2) ? `${tw.log}[axis=y]` : `${y === 4 ? tw.log : tw.stripped}[axis=${z === Z2 || z === zb ? 'x' : 'z'}]`));
-  bp.walls(X1, 1, Z1, X2, 4, zb, (x, y, z) => (z === zb ? bp.get(x, y, z) ?? board : board));
+  bp.atStageDraw(2, () => bp.walls(X1, 1, Z1, X2, 4, zb, (x, y, z) => (z === zb ? bp.get(x, y, z) ?? board : board)));
   bp.fill(X1 + 1, 4, zb + 1, X2 - 1, 4, Z2 - 1, tw.planks);
-  bp.fill(X1 + 1, 5, Z1 + 1, X2 - 1, 5, zb - 2, tw.planks);
+  bp.atStageDraw(2, () => bp.fill(X1 + 1, 5, Z1 + 1, X2 - 1, 5, zb - 2, tw.planks));
   // Huge half-hipped roof reaching low.
-  const at = roof(bp, { x1: 0, x2: 12, z1: Z1 - 1, z2: Z2 + 2, y: y0, mat: roofMat, s: 4, n: back });
+  const R0 = { x1: 0, x2: 12, z1: Z1 - 1, z2: Z2 + 2, y: y0, mat: roofMat, s: 4, n: back };
+  bp.stage = 2;
+  const at = roof(bp, R0);
   closeUnder(bp, at, perimeter(X1, Z1, X2, Z2), 5, (x, y, z) => (z === Z2 ? tw.planks : board), roofMat);
   closeUnder(bp, at, [...Array(X2 - X1 - 1)].map((_, i) => [X1 + 1 + i, zb]), 5, tw.planks, roofMat);
+  bp.stage = 1;
   // Front: ribbon windows with flower boxes on both floors, door, attic window.
   const room = (x) => at(x, Z2).y;
   win(bp, rng, X1 + 1, 2, Z2, 'south', { w: 3, h: 2, box: rw.trapdoor });
@@ -296,6 +322,7 @@ export function farmhouse(rng) {
   win(bp, rng, X2, 2, Z2 - 2, 'east', { h: 2 });
   win(bp, rng, X2, 2, zb + 2, 'east', { h: 2 });
   // Barn: side door, threshing door at the back, hay, stalls, loft by ladder.
+  bp.stage = 2;
   bp.fill(X1, 1, 2, X1, 3, 4, null);
   bp.fill(X1, 4, 2, X1, 4, 4, `${tw.log}[axis=z]`);
   for (let z = Z1 + 1; z < zb; z += 2) bp.set(X2, 3, z, tw.fence);
@@ -310,10 +337,11 @@ export function farmhouse(rng) {
   for (let z = Z1 + 3; z < zb; z++) bp.set(X2 - 3, 1, z, tw.fence);
   bp.set(X2 - 3, 1, Z1 + 2, `${tw.gate}[facing=east,open=true]`);
   bp.set(X2 - 1, 1, zb - 1, 'water_cauldron[level=3]');
-  bp.set(X2 - 1, 1, Z1 + 2, 'composter[level=7]');
+  bp.set(X2 - 1, 1, Z1 + 2, 'composter[level=8]');
   ladderUp(bp, cx, zb - 1, 'north', 1, 5);
   bp.set(cx - 2, 4, Z1 + 3, 'lantern[hanging=true]');
   // Living part: kitchen with stove and chimney, Stube with tiled stove, stairs to the bedrooms.
+  bp.stage = 1;
   const hall = stairHall(bp, { axis: 'x', laneA: [zb + 1], laneB: [], u0: X2 - 1, dir: -1, planes: [0, 4], wood: tw.name });
   bp.set(X1 + 1, 1, zb + 2, 'smoker[facing=east,lit=true]');
   bp.fill(X1 + 1, 2, zb + 2, X1 + 1, at(X1 + 1, zb + 2).y + 1, zb + 2, 'cobblestone');
@@ -327,13 +355,14 @@ export function farmhouse(rng) {
   light(bp, { x1: X1 + 3, z1: zb + 3, x2: X2 - 3, z2: Z2 - 2, y: 5 });
   // Yard: path, hay cart, pasture, well.
   for (let z = Z2 + 1; z <= 16; z++) bp.set(cx, 0, z, 'dirt_path');
+  bp.stage = 2;
   for (const x of [9, 10]) {
     bp.set(x, 1, 16, `${tw.slab}[type=top]`);
     bp.set(x, 2, 16, 'hay_block[axis=x]');
     bp.set(x, 1, 15, 'dark_oak_trapdoor[facing=north,open=true,half=bottom]');
   }
   bp.set(11, 1, 16, tw.fence);
-  bp.set(2, 1, 16, 'composter[level=0]');
+  bp.atStageDraw(1, () => bp.set(2, 1, 16, 'composter[level=0]'));
   for (let z = 1; z <= 12; z++) {
     bp.set(13, 1, z, z === 7 ? `${tw.gate}[facing=east]` : tw.fence);
     bp.set(16, 1, z, tw.fence);
@@ -349,6 +378,7 @@ export function farmhouse(rng) {
   bp.set(14, 1, 9, 'water_cauldron[level=3]');
   bp.mark('pasture', 14, 1, 6, { data: { w: 2, d: 10 } });
   sprinkleFlowers(bp, rng, 14, 2, 15, 11, 0.3, ['dandelion', 'oxeye_daisy', 'short_grass', 'short_grass', 'azure_bluet']);
+  bp.stage = 1;
   bp.fill(13, 0, 13, 15, 0, 15, 'cobblestone');
   bp.set(14, -1, 14, 'cobblestone');
   bp.set(14, 0, 14, 'water');
@@ -362,13 +392,24 @@ export function farmhouse(rng) {
   bp.set(14, 5, 14, `${tw.slab}[type=bottom]`);
   bp.set(14, 3, 14, 'iron_chain[axis=y]');
   bp.set(14, 2, 14, 'lantern[hanging=true]');
-  if (rng.chance(0.5)) bp.mirrorX();
+  const mirror = rng.chance(0.5);
+  bp.overlay(1, 1, (v) => {
+    const at1 = roof(v, { ...R0, z1: zb - 1, n: INF });
+    closeUnder(v, at1, [...Array(X2 - X1 - 1)].map((_, i) => [X1 + 1 + i, zb]), 5, tw.planks, roofMat);
+    closeUnder(v, at1, perimeter(X1, zb, X2, Z2), 5, (x, y, z) => (z === Z2 ? tw.planks : board), roofMat);
+  });
+  terrainVariant(bp, rng, options.terrain, { x1: X1, z1: zb, x2: X2, z2: Z2, wood: tw, mirror, modes: ['walkout'] });
+  bp.stage = 3;
+  growYard(bp, rng, { house: [0, Z1, 12, Z2 + 1], door: [cx, Z2 + 1], wood: tw, roofMat, prefer: ['bees', 'beds', 'woodpile', 'flag', 'fountain'], max: 3 });
+  bp.stage = 1;
+  decorate(bp, rng);
+  if (mirror) bp.mirrorX();
   return bp;
 }
 
 // ================================================================ alpine hut (SAC-Hütte)
 
-export function hut(rng) {
+export function hut(rng, options = {}) {
   const bp = new Blueprint();
   const x1 = 3, x2 = 13, z1 = 3, z2 = 10, cx = 8;
   const ix1 = x1 + 1, ix2 = x2 - 1, iz1 = z1 + 1, iz2 = z2 - 1;
@@ -380,10 +421,13 @@ export function hut(rng) {
   bp.walls(x1, 1, z1, x2, 3, z2, rough);
   bp.fill(ix1, 4, iz1, ix2, 4, iz2, tw.planks);
   logRing(bp, x1, z1, x2, z2, 4, tw.log);
+  // Growth: stage 1 = the stone ground floor under a provisional roof, stage 2 = the timber dormitory storey.
+  bp.stage = 2;
   bp.walls(x1, 5, z1, x2, 7, z2, (x, y, z) => ((x === x1 || x === x2) && (z === z1 || z === z2) ? `${tw.log}[axis=y]` : tw.planks));
   logRing(bp, x1, z1, x2, z2, 8, tw.log);
   const at = roof(bp, { x1: x1 - 1, x2: x2 + 1, z1: z1 - 1, z2: z2 + 2, y: 8, mat: roofMat, kind: 'slabs', n: INF, s: INF, trim: { stairs: tw.stairs, slab: tw.slab } });
   closeUnder(bp, at, perimeter(x1, z1, x2, z2), 9, tw.planks, roofMat);
+  bp.stage = 1;
   // Red and white shutters (SAC colours).
   const shutterPair = (x, y, z, face) => {
     win(bp, rng, x, y, z, face, { h: 2 });
@@ -396,25 +440,28 @@ export function hut(rng) {
   };
   for (const x of [cx - 3, cx + 3]) {
     shutterPair(x, 2, z2, 'south');
-    shutterPair(x, 5, z2, 'south');
-    shutterPair(x, 5, z1, 'north');
+    bp.atStageDraw(2, () => shutterPair(x, 5, z2, 'south'));
+    bp.atStageDraw(2, () => shutterPair(x, 5, z1, 'north'));
   }
   shutterPair(cx - 2, 2, z1, 'north');
   shutterPair(x1, 2, 7, 'west');
-  shutterPair(x1, 5, 7, 'west');
-  shutterPair(x2, 5, 6, 'east');
+  bp.atStageDraw(2, () => shutterPair(x1, 5, 7, 'west'));
+  bp.atStageDraw(2, () => shutterPair(x2, 5, 6, 'east'));
   bp.door(cx, 1, z2, tw.door, 'south');
   bp.set(cx, 3, z2 + 1, `${tw.sign}[facing=south]${signData(['', 'SAC', 'Berghuette', ''], 'red')}`);
-  if (at(cx, z2).y - 9 >= 2) bp.set(cx, 9, z2, 'glass_pane');
+  if (at(cx, z2).y - 9 >= 2) bp.atStageDraw(2, () => bp.set(cx, 9, z2, 'glass_pane'));
   // Kitchen stove under the chimney, common room with long tables, stairs to the dormitory.
-  const hall = stairHall(bp, { axis: 'z', laneA: [ix2 - 1], laneB: [ix2], u0: iz2, dir: -1, planes: [0, 4], wood: tw.name });
+  const hall = bp.atStageDraw(2, () => stairHall(bp, { axis: 'z', laneA: [ix2 - 1], laneB: [ix2], u0: iz2, dir: -1, planes: [0, 4], wood: tw.name }));
   bp.set(ix1, 1, iz1, 'smoker[facing=south,lit=true]');
   bp.set(ix1 + 1, 1, iz1, 'water_cauldron[level=3]');
   bp.set(ix1 + 2, 1, iz1, 'barrel[facing=up]');
   bp.set(ix1 + 3, 1, iz1, 'crafting_table');
   const ch = at(ix1, iz1);
-  bp.fill(ix1, 2, iz1, ix1, ch.y + 1, iz1, 'cobblestone');
-  bp.set(ix1, ch.y + 2, iz1, 'campfire[lit=true,signal_fire=false]');
+  bp.fill(ix1, 2, iz1, ix1, 3, iz1, 'cobblestone');
+  bp.atStageDraw(2, () => {
+    bp.fill(ix1, 4, iz1, ix1, ch.y + 1, iz1, 'cobblestone');
+    bp.set(ix1, ch.y + 2, iz1, 'campfire[lit=true,signal_fire=false]');
+  });
   for (const tz of [iz1 + 2, iz1 + 4]) {
     for (let x = ix1 + 1; x <= ix1 + 4; x++) {
       bp.set(x, 1, tz, `${tw.slab}[type=top]`);
@@ -424,8 +471,10 @@ export function hut(rng) {
   }
   light(bp, { x1: ix1 + 1, z1: iz1 + 1, x2: ix1 + 4, z2: iz2, y: 1 });
   furnish(bp, rng, { x1: ix1, z1: iz1 + 1, x2: ix2 - 2, z2: iz2, y: 1, h: 3 }, 'common', [...hall.cells, ...(hall.ends[0] ?? []), [cx, iz2]], tw.name, { items: ['chest', 'clock', 'barrel', 'chiseled'], table: false });
-  furnish(bp, rng, { x1: ix1, z1: iz1, x2: ix2 - 2, z2: iz2, y: 5, h: 3 }, 'dorm', [...hall.cells, ...(hall.ends[4] ?? [])], tw.name, { items: ['bunk', 'bunk2', 'bunk', 'chest', 'chest', 'barrel', 'sink'] });
-  light(bp, { x1: ix1 + 2, z1: iz1 + 1, x2: ix2 - 3, z2: iz2 - 1, y: 5 });
+  bp.atStageDraw(2, () => {
+    furnish(bp, rng, { x1: ix1, z1: iz1, x2: ix2 - 2, z2: iz2, y: 5, h: 3 }, 'dorm', [...hall.cells, ...(hall.ends[4] ?? [])], tw.name, { items: ['bunk', 'bunk2', 'bunk', 'chest', 'chest', 'barrel', 'sink'] });
+    light(bp, { x1: ix1 + 2, z1: iz1 + 1, x2: ix2 - 3, z2: iz2 - 1, y: 5 });
+  });
   // Terrace with long tables.
   bp.fill(x1 - 1, 0, z2 + 1, x2 + 1, 0, z2 + 5, tw.planks);
   for (const tx of [x1 + 1, x2 - 3]) {
@@ -451,6 +500,20 @@ export function hut(rng) {
     bp.setIfEmpty(bx, 1, bz, rng.pick(['cobblestone', 'mossy_cobblestone', 'andesite', 'stone']));
   }
   sprinkleFlowers(bp, rng, 0, 0, 16, 16, 0.14, ['azure_bluet', 'cornflower', 'dandelion', 'oxeye_daisy', 'short_grass', 'short_grass', 'allium', 'fern']);
-  if (rng.chance(0.5)) bp.mirrorX();
+  const mirror = rng.chance(0.5);
+  bp.overlay(1, 1, (v) => {
+    const at1 = roof(v, { x1: x1 - 1, x2: x2 + 1, z1: z1 - 1, z2: z2 + 2, y: 5, mat: roofMat, kind: 'slabs', n: INF, s: INF, trim: { stairs: tw.stairs, slab: tw.slab } });
+    closeUnder(v, at1, perimeter(x1, z1, x2, z2), 5, tw.planks, roofMat);
+    v.fill(ix1, 4, iz1, ix1, at1(ix1, iz1).y + 1, iz1, 'cobblestone');
+    v.set(ix1, at1(ix1, iz1).y + 2, iz1, 'campfire[lit=true,signal_fire=false]');
+    ladderUp(v, cx, iz1, 'south', 1, 4);
+    stage1Bed(v, rng, [[{ x1: ix2 - 1, z1: iz1, x2: ix2, z2: iz2, y: 1, h: 3 }, [[ix2 - 1, iz2], [ix2, iz2]]]], tw.name, ['bunk', 'chest']);
+  });
+  terrainVariant(bp, rng, options.terrain, { x1, z1, x2, z2, wood: tw, mirror, modes: ['stilts'], plinth: true });
+  bp.stage = 3;
+  growYard(bp, rng, { house: [x1 - 1, z1, x2 + 1, z2 + 5], door: [cx, z2 + 1], wood: tw, roofMat, prefer: ['outhouse', 'woodpile', 'flag', 'bench'], max: 3 });
+  bp.stage = 1;
+  decorate(bp, rng);
+  if (mirror) bp.mirrorX();
   return bp;
 }

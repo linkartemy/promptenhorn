@@ -67,6 +67,45 @@ Check: **[auto]** presence of key blocks in every "apartment" (kitchen, bedroom 
 | Cooperative housing block | Stairwell, an apartment on every floor, balconies |
 | Farm | Living quarters (kitchen, Stube, bedroom) and a barn with hay and stalls |
 | Hut | Common room with long tables, dormitory with bunk beds |
+| Lighthouse (shore) | Red-and-white tower on a pier head, ladder to every level, glass lantern room with the lamp, gallery with railing |
+| Boathouse (shore) | Water slip inside with a boat, walkways on both sides, gate to the lake, loft by ladder |
+| Steamer landing (shore) | Waiting room with benches, ticket counter, timetable, SBB clock, canopy over the quay, bollards |
+| Lido (shore) | Beach, jetty with a diving tower, changing cabins, kiosk with parasol tables, loungers |
+| School (public) | Corridor with coat hooks, classrooms with desks facing a blackboard and a teacher's lectern, stairs, bell turret with a clock, playground |
+| Market hall (public) | Open hall on pillars (no door), market stalls with goods, lanterns, clock |
+| Railway station (public) | Waiting hall, ticket counter, timetable, platform with canopy and SBB clock, track, PostAuto stop |
+| Funicular stations (public) | Hall with platform beside an inclined track (valley: leaves on piers; mountain: arrives from below), ticket counter, clock |
+| Viewpoint (public) | Open shelter with benches facing the view, terrace with railing, peak sign, spyglass spot |
+| Fire station (public) | Two bays with gates and engines, crew room upstairs, hose tower reached by ladder with the alarm bell |
+| Post office (public) | Counters, parcel shelves, yellow POST sign, mailbox, PostAuto stop, the postmaster's flat upstairs |
+
+Walkcheck rules per type live in `SPEC` in `tools/walkcheck.mjs`: `residential` (household markers), `public` (2-wide passages, tall ground hall), `tower` (ladders allowed), `hall` (rooms taller than a storey), `open` (open halls and shelters have no door), `noFootprint` (towers, quays, beaches).
+
+## 5a. Growth stages
+
+Homes grow in three stages (`docs/generator-contract.md` §3); every stage must meet these standards on its own (walkcheck runs every stage).
+
+| # | Requirement | Check |
+|---|---|---|
+| 5a.1 | Stage 1 is a livable small house: kitchen, bed, washtub or bath, storage, light and a window on its living floor, a roof without holes. A closed attic under the provisional roof has a ladder hatch | **[auto]** walkcheck stage 1 (`STAGE_SPEC`) |
+| 5a.2 | Stage N+1 keeps stage N: only the provisional roof (and the floor where the staircase opens) may go; walls, floors and furniture stay | **[auto]** `.dev/stages.mjs` (kept %) + **[review]** |
+| 5a.3 | Stage 3 adds, it does not rebuild: an extension or yard items on free lawn, never blocking a walkway (flood-fill check) | **[auto]** `.dev/stages.mjs`, walkcheck |
+| 5a.4 | A growth stage never changes the colours or layout of the house (all random decisions are taken before drawing) | **[auto]** stage 2 = the house without stages |
+
+## 5b. Props
+
+| # | Requirement | Check |
+|---|---|---|
+| 5b.1 | Rooms have small things: candles, cakes, pots or plants on furniture; tapestries on blank walls; coat hooks by the front door | **[review]** floor plans |
+| 5b.2 | Props never block a passage and never hang on glass (candles and cakes only on full-top furniture, hooks and banners only on full wall blocks) | **[auto]** walkcheck + in-game check |
+| 5b.3 | Entity props get markers instead of blocks: `painting_spot` (with size), `wall_clock`, `coat_rack`, `food_spot` | **[auto]** marker list |
+
+## 5c. Terrain variants
+
+| # | Requirement | Check |
+|---|---|---|
+| 5c.1 | Walk-out: the cellar storey is reachable (hatch with a ladder from a free ground-floor cell; the sunken court by steps from the yard), lit, and the court has a railing | **[auto]** `walkcheck --terrain` |
+| 5c.2 | Stilts: posts reach the drop and carry stone plates under the house; the house above is unchanged | **[review]** preview + in-game |
 
 ## 6. Beauty
 
@@ -78,9 +117,11 @@ Check: **[auto]** presence of key blocks in every "apartment" (kitchen, bedroom 
 ## How to check
 
 ```bash
-node tools/validate-blocks.mjs
-node tools/walkcheck.mjs
-node .dev/ingame-check.mjs
+node tools/validate-blocks.mjs                 # every type, every stage, 25 seeds x 4 rotations
+node tools/walkcheck.mjs all 5                 # every type and stage
+node tools/walkcheck.mjs chalet,townhouse,farmhouse 6 --terrain '{"mode":"walkout","drop":6,"downhill":"west"}'
+node .dev/stages.mjs all 12                    # blocks per stage, removed / kept per transition
+STAGE=1 node .dev/ingame-check.mjs chalet 1 0,1  # test server (also TERRAIN='{...}')
 node .dev/stats.mjs
 ```
 

@@ -10,7 +10,9 @@ const isWalkable = (b) => !b || /carpet|pressure_plate/.test(b);
  * planes: floor block levels [F0, F1, ...]; flight i climbs from planes[i] to planes[i+1] in lane A (even) or B (odd).
  * Returns { cells: footprint [[x, z]] reserved on every floor, ends: approach/exit cells per plane }.
  */
-function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', under = `${wood}_planks` }) {
+function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', under = `${wood}_planks`, stageOf }) {
+  // stageOf(i): growth stage of flight i (the flight that arrives at planes[i + 1]); default: the current stage.
+  const stage0 = bp.stage;
   const xz = (u, v) => (axis === 'z' ? [v, u] : [u, v]);
   const facingOf = (d) => (axis === 'z' ? (d < 0 ? 'north' : 'south') : d < 0 ? 'west' : 'east');
   const us = new Set();
@@ -18,6 +20,7 @@ function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', u
   let a = u0;
   let d = dir;
   for (let i = 0; i + 1 < planes.length; i++) {
+    if (stageOf) bp.stage = stageOf(i);
     const F0 = planes[i];
     const R = planes[i + 1] - F0;
     const lane = i % 2 ? laneB : laneA;
@@ -48,6 +51,7 @@ function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', u
     let a2 = u0;
     let d2 = dir;
     for (let i = 0; i + 1 < planes.length; i++) {
+      if (stageOf) bp.stage = stageOf(i);
       const R = planes[i + 1] - planes[i];
       const e = a2 + d2 * (R + 1);
       if (i >= 1) {
@@ -62,6 +66,7 @@ function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', u
       d2 = -d2;
     }
   }
+  bp.stage = stage0;
   const cells = [];
   for (const u of us) for (const v of [...laneA, ...laneB]) cells.push(xz(u, v));
   return { cells, ends };
@@ -147,9 +152,13 @@ function furnish(bp, rng, r, kind, keep = [], wood = 'spruce', o = {}) {
       if (bp.get(x, y - 1, z) == null) return false;
       if (nextToPane(bp, x, yy, z, 1, b)) return false;
     }
+    const had = cells.map(([x, yy, z]) => bp.everSet(x, yy, z));
     for (const [x, yy, z, b] of cells) bp.set(x, yy, z, b);
     if (connected()) return true;
-    for (const [x, yy, z] of cells) bp.set(x, yy, z, null);
+    cells.forEach(([x, yy, z], i) => {
+      bp.set(x, yy, z, null);
+      if (!had[i]) bp.ever.delete(`${x},${yy},${z}`); // a tried and withdrawn piece leaves no trace for everSet()
+    });
     return false;
   };
   const slots = [];
@@ -220,10 +229,11 @@ function furnish(bp, rng, r, kind, keep = [], wood = 'spruce', o = {}) {
     storage: ['barrel', 'barrel', 'chest', 'barrel', 'hay', 'composter'],
     guest: ['bed', 'chest', 'plant'],
   };
-  for (const it of o.items ?? lists[kind] ?? lists.living) place(items[it]);
+  let placedN = 0;
+  for (const it of o.items ?? lists[kind] ?? lists.living) if (place(items[it])) placedN++;
   // Rooms are remembered for the props pass (decorate) that runs after the generator's own decisions.
   if (!o.bare) (bp.rooms ??= []).push({ ...r, h, kind, wood, keep, stage: bp.stage });
-  if (o.bare) return 0;
+  if (o.bare) return placedN;
   // Dining table with chairs (and table cloth) in the middle.
   const cx = (x1 + x2) >> 1;
   const cz = (z1 + z2) >> 1;
@@ -238,7 +248,8 @@ function furnish(bp, rng, r, kind, keep = [], wood = 'spruce', o = {}) {
     for (const [x, z, f] of shuffled) {
       const wall = bp.get(x - DIR[f][0], y + 1, z - DIR[f][1]);
       if (!bp.get(x, y + 1, z) && wall && !/glass|pane|door|ladder/.test(wall) && !keepSet.has(`${x},${z}`)) {
-        bp.mark('painting_spot', x, y + 1, z, { facing: f });
+        const p = wallPatch(bp, x, y + 1, z, f, inRoom, h - 1);
+        bp.mark('painting_spot', x, y + 1, z, { facing: f, data: p ?? { w: 1, h: 1, dir: alongDir(f) } });
         break;
       }
     }

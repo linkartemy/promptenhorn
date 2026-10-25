@@ -2,7 +2,9 @@
 // Simulates a player (2 blocks tall) walking in from the street in front of the plot, on the rotated build list.
 // Usage: node tools/walkcheck.mjs [type,type,...|all] [seeds=12] [--verbose] [--json out.json]
 import fs from 'node:fs';
-import { BUILDINGS } from '../bridge/buildings.mjs';
+import * as B from '../bridge/buildings.mjs';
+const { BUILDINGS } = B;
+const STAGES = B.STAGES ?? {};
 import { rngFrom, blockName, blockProps, isPaneLike } from '../bridge/blueprint.mjs';
 
 // Per-type expectations. residential: dwelling markers; perFloor: a dwelling on every upper floor;
@@ -18,14 +20,32 @@ export const SPEC = {
   apartment: { residential: true, minLevels: 4, perFloor: 'upper' },
   farmhouse: { residential: true, minLevels: 1 },
   hut: { residential: true, minLevels: 1 },
+  lighthouse: { tower: true, noFootprint: true },
+  boathouse: {},
+  schiffstation: { public: true, noFootprint: true },
+  lido: { noFootprint: true },
+  school: { minLevels: 2, hall: true },
+  markethall: { public: true, open: true },
+  station: { public: true, noFootprint: true },
+  funicular_bottom: { public: true, noFootprint: true },
+  funicular_top: { public: true, noFootprint: true },
+  viewpoint: { noFootprint: true, open: true },
+  firestation: { tower: true },
+  postoffice: { public: true },
 };
+
+// Growth stages (docs/generator-contract.md §3): overrides per stage. Stage 1 is the small house (one living floor).
+export const STAGE_SPEC = {
+  1: { chalet: { minLevels: 1 }, modern: { minLevels: 1 }, townhouse: { minLevels: 2 }, cafe: { minLevels: 1 }, apartment: { minLevels: 3 }, hotel: { minLevels: 2 }, farmhouse: { minLevels: 1 }, hut: { minLevels: 1 } },
+};
+export const specFor = (type, stage) => ({ ...(SPEC[type] ?? {}), ...(STAGE_SPEC[stage]?.[type] ?? {}) });
 
 // ---------------------------------------------------------------- block classes
 const LOW = /carpet$|pressure_plate$|_trapdoor$|^snow$|lily_pad$|daylight_detector$|petals$|wildflowers$|leaf_litter$|candle$|^moss_carpet$/;
-const NOCOLLIDE = /^(air|water|short_grass|tall_grass|fern|large_fern|poppy|dandelion|cornflower|oxeye_daisy|azure_bluet|allium|blue_orchid|.*_tulip|lily_of_the_valley|torchflower|rose_bush|lilac|peony|sunflower|bush|firefly_bush|sweet_berry_bush|wheat|carrots|potatoes|beetroots|.*_sapling|.*sign|.*banner|.*torch|.*button|lever|ladder|vine|rail|redstone_wire|tripwire|light)$/;
+const NOCOLLIDE = /^(air|water|short_grass|tall_grass|fern|large_fern|poppy|dandelion|cornflower|oxeye_daisy|azure_bluet|allium|blue_orchid|.*_tulip|lily_of_the_valley|torchflower|rose_bush|lilac|peony|sunflower|bush|firefly_bush|sweet_berry_bush|wheat|carrots|potatoes|beetroots|.*_sapling|.*sign|.*banner|.*torch|.*button|lever|ladder|vine|rail|redstone_wire|tripwire|tripwire_hook|light)$/;
 const STEP = /_stairs$|_bed$/;
 const DOORLIKE = /_door$|_fence_gate$/;
-const FURNITURE = /moss_block|quartz_slab|trapdoor|barrel|chest|bookshelf|crafting|furnace|smoker|cauldron|lectern|loom|composter|_bed$|_stairs$|fence|_wall$|pane|_bars$|leaves|hay_block|pumpkin|melon|statue|campfire|anvil|cake|potted|flower_pot|decorated_pot|shelf|bell|lantern|_log$|_wood$|wool$|stonecutter|grindstone|cartography|smithing|fletching|jukebox|note_block|beehive|terracotta$/;
+const FURNITURE = /moss_block|quartz_slab|trapdoor|barrel|chest|bookshelf|crafting|furnace|smoker|cauldron|lectern|loom|composter|_bed$|_stairs$|fence|_wall$|pane|_bars$|leaves|hay_block|pumpkin|melon|statue|campfire|anvil|cake|potted|flower_pot|decorated_pot|shelf|bell|lantern|_log$|_wood$|wool$|stonecutter|grindstone|cartography|smithing|fletching|jukebox|note_block|beehive|terracotta$|stained_glass$/;
 const LIGHT = /lantern|sea_lantern|glowstone|campfire|candle|torch|shroomlight|froglight|redstone_lamp\[lit=true|copper_bulb\[lit=true/;
 const THIN = /leaves|fence|_wall$|pane|_bars$|banner|lantern|chain|sign|_rod$|carpet|trapdoor|potted|flower_pot|^(poppy|dandelion|.*_tulip|short_grass|fern)$|wool$/;
 
@@ -74,6 +94,7 @@ export function analyse(list, { turns = 0, size = 21, spec = {} } = {}) {
     for (let y = 1; y <= 3; y++) if (standable(x, y, z)) { starts.push([x, y, z]); break; }
   }
 
+  const lowest = Math.min(1, ...list.map((b) => b.y + 1)); // walk-out cellars lie below the lot surface
   const bfs = ({ ladders }) => {
     const seen = new Set();
     const q = [];
@@ -87,7 +108,7 @@ export function analyse(list, { turns = 0, size = 21, spec = {} } = {}) {
       const onLadder = cls(x, y, z) === 'ladder';
       if (ladders && onLadder) {
         if (body(x, y + 1, z) && body(x, y + 2, z)) push(x, y + 1, z);
-        if (y > 1 && (cls(x, y - 1, z) === 'ladder' || standable(x, y - 1, z))) push(x, y - 1, z);
+        if (y > lowest && (cls(x, y - 1, z) === 'ladder' || standable(x, y - 1, z))) push(x, y - 1, z);
       }
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = x + dx, nz = z + dz;
@@ -131,11 +152,12 @@ export function analyse(list, { turns = 0, size = 21, spec = {} } = {}) {
   const levels = new Map();
   const ys = [...new Set(list.map((b) => b.y))];
   const maxY = Math.max(...ys) + 2;
+  const minY = Math.min(1, ...ys.map((y) => y + 1)); // cellars of walk-out variants lie below the lot surface
   for (let x = 0; x < size; x++)
     for (let z = 0; z < size; z++) {
       if (!plotCell(x, z)) continue;
-      for (let y = 1; y <= maxY; y++) {
-        if (!standable(x, y, z) || cls(x, y, z) === 'ladder') continue;
+      for (let y = minY; y <= maxY; y++) {
+        if (!standable(x, y, z) || cls(x, y, z) === 'ladder' || cls(x, y, z) === 'water') continue;
         const sup = get(x, y - 1, z);
         const supName = blockName(cls(x, y, z) === 'low' ? get(x, y - 1, z) : sup);
         if (FURNITURE.test(supName) || cls(x, y - 1, z) === 'step' || cls(x, y - 1, z) === 'water') continue;
@@ -242,11 +264,11 @@ export function verdict(type, res, spec = SPEC[type] ?? {}) {
   const bigLevels = lv.filter((l) => l.area >= 6);
   for (const l of bigLevels) if (l.reach < 0.9) fails.push(`2.1 level y=${l.y} only ${(l.reach * 100).toFixed(0)}% reachable`);
   if (res.reach < 0.95) fails.push(`2.2 interior reach ${(res.reach * 100).toFixed(1)}%`);
-  if (!res.door) fails.push('2.3 no reachable entrance door');
+  if (!res.door && !spec.open) fails.push('2.3 no reachable entrance door'); // open halls and shelters have no door
   const ground = lv.find((l) => l.y === 1) ?? lv[0];
   for (const l of bigLevels) {
     if (l.y === 1) continue;
-    const ladderOk = spec.tower || l.area < (ground?.area ?? 0) * 0.6 || l === bigLevels[bigLevels.length - 1];
+    const ladderOk = spec.tower || l.y < 1 || l.area < (ground?.area ?? 0) * 0.6 || l === bigLevels[bigLevels.length - 1]; // cellars: technical rooms
     if (l.viaStairs < 0.9 * l.reach && !ladderOk) fails.push(`2.4 level y=${l.y} needs a ladder (no staircase)`);
   }
   if (spec.public && ground && ground.wide < 0.8) fails.push(`2.5 ground passages: only ${(ground.wide * 100).toFixed(0)}% of floor in 2-wide areas`);
@@ -267,7 +289,7 @@ export function verdict(type, res, spec = SPEC[type] ?? {}) {
     }
   }
   for (const l of bigLevels) {
-    if (spec.tower || spec.public) continue;
+    if (spec.tower || spec.public || spec.hall) continue; // halls (classrooms, garages) are taller than a storey
     const isTop = l === bigLevels[bigLevels.length - 1] && bigLevels.length > 1;
     if (!isTop && !l.sloped && (l.mode < 2 || l.mode > 3) && l.area >= 20) fails.push(`4.2 level y=${l.y} storey clear height ${l.mode}`);
   }
@@ -283,20 +305,26 @@ if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/').replace(/
   const args = process.argv.slice(2);
   const verbose = args.includes('--verbose');
   const jsonOut = args.includes('--json') ? args[args.indexOf('--json') + 1] : null;
-  const pos = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--json');
+  const pos = args.filter((a, i) => !a.startsWith('--') && !['--json', '--stage', '--terrain'].includes(args[i - 1]));
+  // --terrain '{"mode":"walkout","drop":6,"downhill":"north"}' checks the terrain variants (docs/generator-contract.md §7).
+  const terrain = args.includes('--terrain') ? JSON.parse(args[args.indexOf('--terrain') + 1]) : null;
   const types = !pos[0] || pos[0] === 'all' ? Object.keys(BUILDINGS) : pos[0].split(',');
+  const onlyStage = args.includes('--stage') ? Number(args[args.indexOf('--stage') + 1]) : null;
   const seeds = Number(pos[1] ?? 12);
   const table = [];
   let failed = 0;
-  for (const type of types) {
+  for (const type of types) for (let stage = 1; stage <= (STAGES[type] ?? 1); stage++) {
+    if (onlyStage && stage !== onlyStage) continue;
+    const label = STAGES[type] > 1 ? `${type}@${stage}` : type;
+    const spec = specFor(type, stage);
     let runs = 0, bad = 0, minReach = 1, minClear = 9, levelsMin = 99, levelsMax = 0, fpMin = 999;
     const issues = new Map();
     for (let s = 0; s < seeds; s++)
       for (let turns = 0; turns < 4; turns++) {
-        const bp = BUILDINGS[type](rngFrom(`walk${s}:${type}`));
+        const bp = BUILDINGS[type](rngFrom(`walk${s}:${type}`), { stage, ...(terrain ? { terrain } : {}) });
         const list = bp.toBuildList({ turns, size: 21, offset: 2 });
         const res = analyse(list, { turns });
-        const fails = verdict(type, res);
+        const fails = verdict(type, res, spec);
         runs++;
         if (fails.length) bad++;
         for (const f of fails) issues.set(f.replace(/y=\d+/, 'y=*').replace(/\d+(\.\d+)?%/, '*%'), (issues.get(f) ?? []).concat(`s${s}t${turns}`));
@@ -307,17 +335,17 @@ if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/').replace(/
         minClear = Math.min(minClear, ...big.map((l) => l.minClear));
         fpMin = Math.min(fpMin, res.footprint);
         if (verbose && fails.length) {
-          console.log(`  ${type} s${s} t${turns}: ${fails.join('; ')}`);
+          console.log(`  ${label} s${s} t${turns}: ${fails.join('; ')}`);
           for (const w of (res.lint.where ?? []).slice(0, 6)) console.log(`     ${w}`);
           for (const l of res.levels) if (l.unreachable.length) console.log(`     y=${l.y} unreachable: ${l.unreachable.slice(0, 12).map((c) => c.join(',')).join(' ')}`);
         }
       }
     failed += bad;
-    table.push({ type, runs, pass: runs - bad, minReach: +(minReach * 100).toFixed(1), levels: `${levelsMin}-${levelsMax}`, minClear, footprint: fpMin, issues: [...issues].map(([k, v]) => `${k} (${v.length}x)`) });
+    table.push({ type: label, runs, pass: runs - bad, minReach: +(minReach * 100).toFixed(1), levels: `${levelsMin}-${levelsMax}`, minClear, footprint: fpMin, issues: [...issues].map(([k, v]) => `${k} (${v.length}x)`) });
   }
-  console.log('type        runs  pass  minReach  levels  minClear  footprint');
+  console.log('type          runs  pass  minReach  levels  minClear  footprint');
   for (const r of table) {
-    console.log(`${r.type.padEnd(11)} ${String(r.runs).padStart(4)} ${String(r.pass).padStart(5)} ${String(r.minReach).padStart(8)}% ${r.levels.padStart(7)} ${String(r.minClear).padStart(9)} ${String(r.footprint).padStart(10)}`);
+    console.log(`${r.type.padEnd(13)} ${String(r.runs).padStart(4)} ${String(r.pass).padStart(5)} ${String(r.minReach).padStart(8)}% ${r.levels.padStart(7)} ${String(r.minClear).padStart(9)} ${String(r.footprint).padStart(10)}`);
     for (const i of r.issues.slice(0, 8)) console.log(`    ✗ ${i}`);
   }
   if (jsonOut) fs.writeFileSync(jsonOut, JSON.stringify(table, null, 2));

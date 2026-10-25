@@ -206,19 +206,47 @@ export function chalet(rng, options = {}) {
   // ---- growth stage 1: the ground floor alone under a provisional roof, with a bed and a washtub in the Stube
   bp.overlay(1, 1, (v) => {
     const skip = leanTo ? (x, z) => x > x2 && z >= leanZ[0] - 1 && z <= leanZ[1] + 1 : undefined;
-    const at1 = roof(v, { x1: x1 - 1, x2: x2 + 1, z1: z1 - 1, z2: z2 + 1, y: 4, mat: roofMat, kind: steep ? 'stairs' : 'slabs', n: INF, s: INF, trim: { stairs: trimW.stairs, slab: trimW.slab }, skip });
+    const at1 = roof(v, { x1: x1 - 1, x2: x2 + 1, z1: z1 - 1, z2: z2 + 1, y: steep ? 4 : 5, mat: roofMat, kind: steep ? "stairs" : "slabs", n: INF, s: INF, trim: { stairs: trimW.stairs, slab: trimW.slab }, skip });
     closeUnder(v, at1, perimeter(x1, z1, x2, z2), 5, timber, roofMat);
     v.fill(sx, 4, iz1, sx, at1(sx, iz1).y + 1, iz1, chim);
     v.set(sx, at1(sx, iz1).y + 2, iz1, 'campfire[lit=true,signal_fire=false]');
     if (at1(cx, z2).y - 5 >= 2) v.set(cx, at1(cx, z2).y - 1, z2 + 1, `red_wall_banner[facing=south]${SWISS_FLAG}`);
     ladderUp(v, cx, iz1, 'south', 1, 4);
-    furnish(v, rng, front(0), 'stube', keepOn(0), inner.name, { items: ['bed', 'chest'], bare: true });
-    furnish(v, rng, back(0), 'kitchen', [...keepOn(0), [sx, iz1 + 1], [cx, iz1 + 1]], inner.name, { items: ['tub'], bare: true });
+    // Where the staircase will go: a sleeping alcove with a washstand along the east wall.
+    furnish(v, rng, { x1: ix2 - 1, z1: iz1, x2: ix2, z2: iz2, y: 1, h: 3 }, 'bedroom', [[ix2 - 1, iz2], [ix2, iz2]], inner.name, { items: ['bed', 'tub', 'chest'], bare: true });
   });
-  // ---- growth stage 3: the yard grows (fountain, bee house, greenhouse or pergola, flag)
+  // ---- terrain variant (walk-out cellar or Stadel posts), part of the house from stage 1
+  terrainVariant(bp, rng, options.terrain, { x1, z1, x2, z2, wood: tw, mirror });
+  // ---- growth stage 3: a glazed Wintergarten under the front Laube, then the yard grows (fountain, bees, flag)
   bp.stage = 3;
+  {
+    const zf = z2 + 3;
+    for (let x = x1; x <= x2; x++)
+      for (let z = z2 + 1; z <= zf; z++) {
+        bp.set(x, 0, z, z === zf || x === x1 || x === x2 ? 'stone_bricks' : inner.planks);
+        for (let y = 1; y <= 3; y++) {
+          const b = bp.get(x, y, z);
+          if (b && !/lantern|fence|_trapdoor/.test(b)) bp.set(x, y, z, null);
+        }
+      }
+    const post = `${tw.log}[axis=y]`;
+    for (let z = z2 + 1; z <= zf; z++)
+      for (const x of [x1, x2]) for (let y = 1; y <= 3; y++) bp.set(x, y, z, z === zf || y === 3 ? post : 'glass_pane');
+    for (let x = x1 + 1; x < x2; x++) {
+      const isPost = x === cx - 1 || x === cx + 1 || (x - x1) % 4 === 0 && Math.abs(x - cx) > 1;
+      for (let y = 1; y <= 2; y++) bp.set(x, y, zf, isPost ? post : 'glass_pane');
+      bp.set(x, 3, zf, `${tw.stripped}[axis=x]`);
+      bp.set(x, 4, zf, `${trimW.slab}[type=bottom]`);
+    }
+    for (const x of [x1, x2]) bp.set(x, 4, zf, `${trimW.slab}[type=bottom]`);
+    bp.door(cx, 1, zf, tw.door, 'south');
+    bp.set(cx, 0, zf + 1, 'stone_brick_slab[type=top]');
+    for (let x = x1 + 1; x < x2; x++) if (Math.abs(x - cx) > 1 && !bp.get(x, 1, zf + 1)) bp.set(x, 1, zf + 1, rng.pick(BOX_FLOWERS));
+    furnish(bp, rng, { x1: x1 + 1, z1: z2 + 1, x2: x2 - 1, z2: z2 + 2, y: 1, h: 2 }, 'living', [[cx, z2 + 1], [cx, z2 + 2]], inner.name, { items: ['plant', 'armchair', 'plant', 'armchair', 'plant'], table: false });
+  }
   growYard(bp, rng, { house: [x1 - 1, z1, x2 + 1, z2 + 2], wood: trimW, roofMat, door: [cx, z2 + 1], prefer: ['fountain', 'bees', 'greenhouse', 'flag'] });
   bp.stage = 1;
+  decorate(bp, rng);
   if (mirror) bp.mirrorX();
   return bp;
 }

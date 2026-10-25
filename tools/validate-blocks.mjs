@@ -4,7 +4,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUILDINGS, square, plaza } from '../bridge/buildings.mjs';
+import * as B from '../bridge/buildings.mjs';
+const { BUILDINGS, square, plaza } = B;
+const STAGES = B.STAGES ?? {};
 import { rngFrom } from '../bridge/blueprint.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -33,13 +35,15 @@ function check(block, where) {
 let total = 0;
 const generators = { ...BUILDINGS, square: (rng) => square(rng) };
 if (typeof plaza === 'function') generators.plaza = (rng) => plaza(rng);
-for (const [type, gen] of Object.entries(generators)) {
+let builds = 0;
+for (const [type, gen] of Object.entries(generators)) for (let stage = 1; stage <= (STAGES[type] ?? 1); stage++) {
   for (let s = 0; s < 25; s++) {
     for (let turns = 0; turns < 4; turns++) {
-      const list = gen(rngFrom(`validate:${type}:${s}`)).toBuildList({ turns, size: 21, offset: 2 });
+      builds++;
+      const list = gen(rngFrom(`validate:${type}:${s}`), { stage }).toBuildList({ turns, size: 21, offset: 2 });
       for (const b of list) {
         total++;
-        check(b.block, `${type} seed ${s} turns ${turns}`);
+        check(b.block, `${type} stage ${stage} seed ${s} turns ${turns}`);
         if (b.x < 0 || b.z < 0 || b.x > 20 || b.z > 20) problems.set(`${type}@${b.x},${b.z}`, `outside plot (${type} seed ${s})`);
       }
     }
@@ -50,4 +54,4 @@ if (problems.size) {
   console.log(`\n${problems.size} problem(s) in ${total} placements`);
   process.exit(1);
 }
-console.log(`✓ all ${total} placements valid (${Object.keys(generators).length} generators × 25 seeds × 4 rotations)`);
+console.log(`✓ all ${total} placements valid (${Object.keys(generators).length} generators, ${builds} builds: every growth stage × 25 seeds × 4 rotations)`);
