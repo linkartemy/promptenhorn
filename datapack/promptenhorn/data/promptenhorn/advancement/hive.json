@@ -5,10 +5,10 @@
       "id": "minecraft:beehive"
     },
     "title": {
-      "text": "Улей"
+      "text": "Hive"
     },
     "description": {
-      "text": "Пять субагентов одновременно в одном чате"
+      "text": "Five subagents at once in one chat"
     },
     "frame": "goal",
     "show_toast": true,

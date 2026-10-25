@@ -16,9 +16,9 @@ function grant(ctx, id, target = '@a') {
 
 const advancements = {
   id: 'advancements',
-  group: 'Прогресс',
-  label: 'Достижения',
-  description: 'Всплывающие ачивки за вехи города: первый дом, ночная смена, зелёный свет после трёх падений тестов, улей из пяти субагентов…',
+  group: 'progress',
+  label: 'Advancements',
+  description: 'Pop-up achievements for the town\'s milestones: the first house, the night shift, a green light after three test failures, a hive of five subagents…',
   presets: [],
   async setup(ctx) {
     ready = await ensureDatapack(ctx);

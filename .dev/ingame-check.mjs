@@ -28,11 +28,12 @@ const report = [];
 for (const type of types) {
   for (let s = Number(process.env.SEED0 ?? 0); s < Number(process.env.SEED0 ?? 0) + seeds; s++) {
     for (const turns of rots) {
-      const x0 = 20000 + (caseNo % 8) * 32;
-      const z0 = 20000 + Math.floor(caseNo / 8) * 32;
+      const x0 = Number(process.env.X0 ?? 20000) + (caseNo % 8) * 32;
+      const z0 = Number(process.env.Z0 ?? 20000) + Math.floor(caseNo / 8) * 32;
       caseNo++;
       const seed = `ingame${s}`;
-      const bp = type === 'square' || type === 'plaza' ? gens[type](rngFrom(seed)) : gens[type](rngFrom(`${seed}:${type}`));
+      const opts = { ...(process.env.STAGE ? { stage: Number(process.env.STAGE) } : {}), ...(process.env.TERRAIN ? { terrain: JSON.parse(process.env.TERRAIN) } : {}) };
+      const bp = type === 'square' || type === 'plaza' ? gens[type](rngFrom(seed)) : gens[type](rngFrom(`${seed}:${type}`), opts);
       const list = bp.toBuildList({ turns, size: 21, offset: 2, clipMin: 0, clipMax: 20 });
       await cmd(`forceload add ${x0 - 4} ${z0 - 4} ${x0 + 24} ${z0 + 24}`);
       for (let i = 0; i < 40; i++) {

@@ -12,7 +12,7 @@ const colorOf = (b) => C.find(([re]) => re.test(b))[1];
 
 const [type, seed = 'a', out, scaleArg = '14'] = process.argv.slice(2);
 const s = Number(scaleArg);
-const list = BUILDINGS[type](rngFrom(`${seed}:${type}`)).toBuildList({ turns: 0, size: 21, offset: 2 });
+const list = BUILDINGS[type](rngFrom(`${seed}:${type}`), { ...(process.env.STAGE ? { stage: Number(process.env.STAGE) } : {}), ...(process.env.TERRAIN ? { terrain: JSON.parse(process.env.TERRAIN) } : {}) }).toBuildList({ turns: 0, size: 21, offset: 2 });
 const map = new Map(list.map((b) => [`${b.x},${b.y},${b.z}`, b.block]));
 const res = analyse(list, { turns: 0 });
 const levels = res.levels.filter((l) => l.area >= 6);

@@ -1,0 +1,12 @@
+{
+  "port": 7786,
+  "serverDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-server",
+  "stateFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-state-wild.json",
+  "heartbeatFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-heartbeat-wild",
+  "archiveDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-archive-wild",
+  "searchOrigin": [-60000, 60000],
+  "preset": "minimal",
+  "colonists": "on",
+  "wildUrl": "http://127.0.0.1:7785/event",
+  "wildHeartbeatFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/wild-heartbeat"
+}

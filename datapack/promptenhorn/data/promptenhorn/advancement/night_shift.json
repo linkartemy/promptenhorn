@@ -5,10 +5,10 @@
       "id": "minecraft:lantern"
     },
     "title": {
-      "text": "Ночная смена"
+      "text": "Night shift"
     },
     "description": {
-      "text": "Чат работал между 2 и 5 часами ночи"
+      "text": "A chat worked between 2 and 5 a.m."
     },
     "frame": "task",
     "show_toast": true,

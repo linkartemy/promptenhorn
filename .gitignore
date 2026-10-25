@@ -37,3 +37,11 @@ server/plugins/
 .dev/old/
 backups/
 bridge.log
+
+# Wild mode (wild/): its own server, world, RCON password and colony state
+wild-server/
+wild-state.json*
+wild-config.json
+.wild-heartbeat
+.dev/wild-heartbeat
+.dev/wild-config.json

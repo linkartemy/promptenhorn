@@ -1,9 +1,4 @@
 {
-  "bots.say.arrive": "Иду строить: {what}!",
-  "bots.say.done": "Готово! {what} стоит.",
-  "bots.say.waiting": "Нужно твоё разрешение!",
-  "bots.say.question": "У меня к тебе вопрос!",
-  "bots.say.sleep": "Шабаш на сегодня. Спокойной ночи!",
   "common.city.founded": "Основан город {city}",
   "common.district.new": "Новый квартал: {name}",
   "common.teleport": "[телепорт]",

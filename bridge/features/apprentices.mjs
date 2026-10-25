@@ -29,9 +29,9 @@ async function removeAll(ctx, s) {
 
 const apprentices = {
   id: 'apprentices',
-  group: 'Строители',
-  label: 'Подмастерья',
-  description: 'Каждый субагент — маленький помощник рядом со строителем: Explore с подзорной трубой, Plan с картой. Уходит, когда субагент закончил.',
+  group: 'builders',
+  label: 'Apprentices',
+  description: 'Every subagent is a small helper next to the builder: Explore with a spyglass, Plan with a map. It leaves when the subagent is done.',
   presets: ['basic'],
   always: ['onRetire', 'onBuilderLeave'],
   async setup(ctx) {

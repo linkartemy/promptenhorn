@@ -4,6 +4,7 @@
 // at the top for 1.5 s ("stop-to-go"). All motion is client-side interpolation: four commands a
 // minute per dial.
 import { fxTagsSnbt } from '../fx.mjs';
+import { markersOfKind } from './markers.mjs';
 
 const quiet = (h) => h >= 22 || h < 7;
 
@@ -23,9 +24,9 @@ function hourBell(ctx) {
 let lastHour = null;
 const clockBells = {
   id: 'clockBells',
-  group: 'Город',
-  label: 'Цитглогге бьёт часы',
-  description: 'Каждый час (с 7 до 22) колокол часовой башни бьёт по реальному времени, а вокруг башни проходит парад белых медвежат. Ночью тихо.',
+  group: 'city',
+  label: 'The Zytglogge strikes the hours',
+  description: 'Every hour (7 to 22) the clock tower bell strikes by real time, and a parade of little polar bears circles the tower. Quiet at night.',
   presets: [],
   onTick(ctx) {
     const now = ctx.now();
@@ -67,13 +68,31 @@ function quat([ax, ay, az], deg) {
 }
 const f = (n) => `${n.toFixed(4)}f`;
 
-/** The dials the SBB hands go on: clock towers' and churches' dials (bounded, nearest the centre first). */
-function dials(ctx) {
+const NORMALS = { south: [0, 1], north: [0, -1], east: [1, 0], west: [-1, 0] };
+
+/**
+ * The dials the SBB hands go on: clock towers' and churches' dials (bounded, nearest the centre first).
+ * Generator markers (`clock_spot`, facing outwards) come first; plotmeta's pattern search fills in for
+ * plots built without markers and gives the dial radius (big blue dial or small white one).
+ */
+async function dials(ctx) {
   const out = [];
   const plots = Object.values(ctx.state.plots).filter((p) => p.done && (p.type === 'clocktower' || p.type === 'church'));
   plots.sort((a, b) => Math.hypot(...a.cell) - Math.hypot(...b.cell));
   for (const p of plots) {
-    for (const d of ctx.meta(p).clockFaces) {
+    const meta = ctx.meta(p).clockFaces;
+    const faces = new Map(meta.map((d) => [`${d.x},${d.y},${d.z}`, d]));
+    const local = new Map(ctx.buildList(p).local.map((b) => [`${b.x},${b.y},${b.z}`, b.block]));
+    for (const m of await markersOfKind(ctx, p, 'clock_spot')) {
+      const [x, y, z] = [m.x - p.x0, m.y - p.y, m.z - p.z0];
+      const n = NORMALS[m.facing];
+      if (!n || faces.has(`${x},${y},${z}`)) continue;
+      // Radius: a dial face block two cells to the side means the big dial.
+      const [ax, az] = n[0] ? [0, 1] : [1, 0];
+      const big = /concrete|terracotta|wool/.test(local.get(`${x + ax * 2},${y},${z + az * 2}`) ?? '');
+      faces.set(`${x},${y},${z}`, { x, y, z, normal: n, r: big ? 2 : 1 });
+    }
+    for (const d of faces.values()) {
       out.push({ id: `${p.key.replace(',', '_')}_${d.x}_${d.y}_${d.z}`, plot: p, x: p.x0 + d.x, y: p.y + d.y, z: p.z0 + d.z, n: d.normal, r: d.r });
       if (out.length >= 12) return out;
     }
@@ -125,26 +144,28 @@ function angles(now) {
 let loaded = new Map(); // dial id -> loaded at the last minute check
 let lastMinute = null;
 let lastSegment = null;
+let dialList = []; // refreshed once a minute
 
 const sbbClock = {
   id: 'sbbClock',
-  group: 'Пасхалки',
-  label: 'SBB-часы',
-  description: 'На циферблатах башен и церквей — настоящие стрелки по твоему времени; красная секундная обходит круг за 58,5 с и замирает наверху на 1,5 с.',
+  group: 'extras',
+  label: 'SBB clocks',
+  description: 'The dials of towers and churches show real hands by your time; the red second hand goes round in 58.5 s and pauses at the top for 1.5 s.',
   presets: [],
   setup() {
     loaded = new Map();
     lastMinute = null;
     lastSegment = null;
+    dialList = [];
   },
   async onTick(ctx) {
     const now = ctx.now();
     const minute = now.getHours() * 60 + now.getMinutes();
-    const list = dials(ctx);
     if (minute !== lastMinute) {
       lastMinute = minute;
+      dialList = await dials(ctx);
       const a = angles(now);
-      for (const d of list) {
+      for (const d of dialList) {
         // Only dials in loaded chunks (a player nearby); summon the hands there if they are missing.
         ctx.fx.push(async (cmd) => {
           const isLoaded = (await cmd(`execute if loaded ${d.x} ${d.y} ${d.z}`)).includes('passed');
@@ -171,7 +192,7 @@ const sbbClock = {
     if (seg === 4) return; // pause at twelve (the hand already points up: 360° = 0°)
     const end = (seg + 1) * 14.625;
     const ticks = Math.max(1, Math.round((end - s) * 20));
-    for (const d of list) {
+    for (const d of dialList) {
       if (!loaded.get(d.id)) continue;
       ctx.fx.push(`data merge entity @e[type=minecraft:block_display,tag=${handTag(d, 's')},limit=1] {start_interpolation:0,interpolation_duration:${ticks},transformation:${handTransform(d, 's', (seg + 1) * 90)}}`, { key: `sbbs:${d.id}` });
     }

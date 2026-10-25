@@ -6,6 +6,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ensureDatapack } from './datapack.mjs';
+import { t } from '../i18n.mjs';
+import { summitList } from '../smallforms.mjs';
 
 // --- 19: district rank
 
@@ -43,7 +45,7 @@ async function applyRank(ctx, d, announce) {
   ctx.save();
   if (announce) {
     ctx.fx.push([
-      `title @a subtitle ${ctx.textJson(`${d.name} теперь ${title}`, 'yellow')}`,
+      `title @a subtitle ${ctx.textJson(t('town.rank.up', { name: d.name, title }), 'yellow')}`,
       `title @a title ${ctx.textJson(title, color)}`,
     ]);
     if (rank === 3) ctx.achieve('stadt');
@@ -52,9 +54,9 @@ async function applyRank(ctx, d, announce) {
 
 const townRank = {
   id: 'townRank',
-  group: 'Прогресс',
-  label: 'Статус посёлка',
-  description: 'По числу домов квартал растёт: Weiler → Dorf (3) → Städtli (8) → Stadt (15). Новое имя над площадью, памятник и титр при повышении.',
+  group: 'progress',
+  label: 'Settlement rank',
+  description: 'A district grows with its number of houses: Weiler → Dorf (3) → Städtli (8) → Stadt (15). A new name over the square, a monument and a title on promotion.',
   presets: ['basic'],
   setup(ctx) {
     // Silent catch-up for districts that grew while the feature was off (no titles).
@@ -132,9 +134,9 @@ const chf = (tokens) => Math.round(tokens / 1000).toLocaleString('de-CH').replac
 
 const francs = {
   id: 'francs',
-  group: 'Прогресс',
-  label: 'Франки за токены',
-  description: 'Над главной площадью табло «Kasse: CHF 12 480» — 1 франк за 1000 токенов (из транскриптов читаются только цифры usage).',
+  group: 'progress',
+  label: 'Francs for tokens',
+  description: 'Over the main square, a "Kasse: CHF 12 480" board: 1 franc per 1000 tokens (only the usage numbers are read from transcripts).',
   presets: [],
   onEvent(ctx, s, ev) {
     if (ev.transcript && ['Stop', 'SubagentStop', 'SessionEnd', 'StopFailure'].includes(ev.kind)) return readUsage(ctx, s, ev.transcript);
@@ -147,9 +149,10 @@ const francs = {
     const text = `Kasse: CHF ${chf(ctx.state.totals.tokens ?? 0)}`;
     const [x, y, z] = [ctx.state.city.cx + 0.5, sq.y + 11, ctx.state.city.cz + 0.5];
     if (francs.shown === text) return;
-    // Only when the square is loaded (a player is near): summon once, then just update the text.
+    // Only when the square is loaded (a player is near): summon once, then just update the text. The fixed
+    // UUID keeps a second board from appearing when the check runs before the square's entities loaded.
     ctx.fx.push(async (cmd) => {
-      await cmd(`execute if loaded ${Math.floor(x)} ${y} ${Math.floor(z)} unless entity @e[type=minecraft:text_display,tag=alps_kasse] run summon minecraft:text_display ${x} ${y} ${z} {Tags:["alps","alps_kasse"],billboard:"center",shadow:1b,background:1073741824,transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],scale:[2f,2f,2f]}}`);
+      await cmd(`execute if loaded ${Math.floor(x)} ${y} ${Math.floor(z)} unless entity @e[type=minecraft:text_display,tag=alps_kasse] run summon minecraft:text_display ${x} ${y} ${z} {UUID:[I;1097887603,1801548645,-1414812757,1347109971],Tags:["alps","alps_kasse"],billboard:"center",shadow:1b,background:1073741824,transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f],scale:[2f,2f,2f]}}`);
       const out = await cmd(`data merge entity @e[type=minecraft:text_display,tag=alps_kasse,limit=1] {text:${ctx.textJson(text, 'gold')}}`);
       if (out.includes('Modified')) francs.shown = text;
     }, { key: 'kasse', cost: 2 });
@@ -163,17 +166,23 @@ const francs = {
 // --- 21: Matterhorn progress bar: a Swiss flag on the nearest peak at 10 houses, then a ring of
 // lanterns per further 10 houses (visible at night from anywhere in the valley).
 
+// The flag pole stands four blocks west of the summit, clear of the viewpoint shelter and its cross
+// (economy's summit object, 5 x 5 around the peak); the flag flies away from it. Everything is placed
+// relative to the ground of the pole's own column.
+const FLAG_V = 2;
 function tierCommands(peak, tier) {
   const { x, y, z } = peak;
   const out = [];
   if (tier === 1) {
-    for (let h = 1; h <= 6; h++) out.push(`setblock ${x} ${y + h - 1} ${z} spruce_fence`);
+    const at = (dx, dy, block) => `execute positioned ${x - 4} ${y + 20} ${z} positioned over motion_blocking_no_leaves run setblock ~${dx} ~${dy} ~ ${block}`;
+    // The pole first; after it, "over motion_blocking" of its column is the air just above its top.
+    out.push(`execute positioned ${x - 4} ${y + 20} ${z} positioned over motion_blocking_no_leaves run fill ~ ~ ~ ~ ~5 ~ spruce_fence keep`);
     for (let i = 1; i <= 5; i++)
       for (let j = 0; j < 5; j++) {
         const white = (j === 2 && i >= 2 && i <= 4) || (i === 3 && j >= 1 && j <= 3);
-        out.push(`setblock ${x + i} ${y + 2 + j} ${z} ${white ? 'white_concrete' : 'red_concrete'}`);
+        out.push(at(-i, 2 + j - 6, white ? 'white_concrete' : 'red_concrete'));
       }
-    out.push(`setblock ${x} ${y + 6} ${z} lantern`);
+    out.push(at(0, 0, 'lantern'));
     return out;
   }
   const r = tier; // tier 2 -> radius 2, …
@@ -186,11 +195,36 @@ function tierCommands(peak, tier) {
   return out;
 }
 
+/**
+ * The first version put the flag pole on the summit itself, through the viewpoint shelter's roof and
+ * cross: take that flag down, rebuild the shelter from its own list and raise the flag beside it.
+ */
+function moveFlag(ctx, peak) {
+  const { x, y, z } = peak;
+  const r = { x1: x - 14, z1: z - 14, x2: x + 14, z2: z + 14 };
+  const cmds = [
+    `fill ${x + 1} ${y + 2} ${z} ${x + 5} ${y + 6} ${z} air replace minecraft:red_concrete`,
+    `fill ${x + 1} ${y + 2} ${z} ${x + 5} ${y + 6} ${z} air replace minecraft:white_concrete`,
+    `fill ${x} ${y} ${z} ${x} ${y + 6} ${z} air replace minecraft:spruce_fence`,
+    `fill ${x} ${y} ${z} ${x} ${y + 6} ${z} air replace minecraft:lantern`,
+  ];
+  const summit = Object.values(ctx.state.objects ?? {}).find((o) => o.type === 'summit' && o.placed > 0);
+  if (summit) for (const b of summitList().slice(0, summit.done ? undefined : summit.placed)) cmds.push(`setblock ${summit.x0 + b.x} ${summit.y0 + b.y} ${summit.z0 + b.z} ${b.block}`);
+  cmds.push(...tierCommands(peak, 1));
+  ctx.fx.push(() => ctx.holdArea('matterhorn', r, 10000), { cost: 2 });
+  ctx.fx.later(2500, cmds, { cost: 20 });
+  ctx.fx.later(2600, () => {
+    peak.flagV = FLAG_V;
+    ctx.save();
+    ctx.log('Matterhorn flag moved beside the summit shelter');
+  });
+}
+
 const matterhorn = {
   id: 'matterhorn',
-  group: 'Прогресс',
-  label: 'Маттерхорн-прогрессбар',
-  description: 'На ближайшей вершине на 10 домах поднимается швейцарский флаг, затем каждые 10 домов — новое кольцо фонарей. Видно ночью из долины.',
+  group: 'progress',
+  label: 'Matterhorn progress bar',
+  description: 'At 10 houses a Swiss flag goes up on the nearest peak, then every 10 houses add a new ring of lanterns. Visible at night from the valley.',
   presets: [],
   setup(ctx) {
     ctx.needPeaks();
@@ -203,6 +237,7 @@ const matterhorn = {
     matterhorn.next = now + 60000;
     const peak = ctx.state.city?.peaks?.[0];
     if (!peak) return;
+    if ((peak.tiers ?? 0) >= 1 && (peak.flagV ?? 1) < FLAG_V) return moveFlag(ctx, peak);
     const want = Math.min(12, Math.floor((ctx.state.totals.houses ?? 0) / 10));
     const built = peak.tiers ?? 0;
     if (built >= want) return;
@@ -212,6 +247,7 @@ const matterhorn = {
     ctx.fx.later(2500, tierCommands(peak, tier));
     ctx.fx.later(2600, () => {
       peak.tiers = tier;
+      if (tier === 1) peak.flagV = FLAG_V;
       ctx.save();
       ctx.log(`Matterhorn tier ${tier}`);
     });
@@ -240,9 +276,9 @@ function hallDialog(ctx) {
     const pct = Math.floor((100 * site.rec.placed) / Math.max(1, site.rec.total));
     const label = `${o === 0 ? '⌛ ' : o === 1 ? '⚒ ' : '☾ '}${ctx.cleanText(s.name, 22)} · ${ctx.cleanText(site.label, 18)} ${pct}%`;
     // Teleport next to the builder itself (falls back to the plot front if it isn't loaded/spawned).
-    const tp = { label: { text: label, color: o === 0 ? 'red' : o === 1 ? 'green' : 'gray' }, tooltip: { text: 'Телепорт к строителю' }, action: { type: 'run_command', command: `/execute unless entity ${ctx.builderSel(s)} run tp @s ${x + 0.5} ${y} ${z + 2.5}` } };
+    const tp = { label: { text: label, color: o === 0 ? 'red' : o === 1 ? 'green' : 'gray' }, tooltip: { text: t('town.hall.tp') }, action: { type: 'run_command', command: `/execute unless entity ${ctx.builderSel(s)} run tp @s ${x + 0.5} ${y} ${z + 2.5}` } };
     const tpLive = { ...tp, action: { type: 'run_command', command: `/tp @s ${ctx.builderSel(s)}` } };
-    const follow = { label: { text: '👁', color: 'aqua' }, tooltip: { text: 'Следить: камера едет за строителем (Shift — выйти)' }, width: 30, action: { type: 'run_command', command: `/trigger alps_follow set ${followTargets.length + 1}` } };
+    const follow = { label: { text: '👁', color: 'aqua' }, tooltip: { text: t('town.hall.follow') }, width: 30, action: { type: 'run_command', command: `/trigger alps_follow set ${followTargets.length + 1}` } };
     const entry = [s.at && ctx.rt(s).spawned !== false ? tpLive : tp, follow];
     const len = Buffer.byteLength(JSON.stringify(entry));
     if (size + len > 1250) break; // one RCON packet
@@ -251,18 +287,18 @@ function hallDialog(ctx) {
     actions.push(...entry);
   }
   const sq = ctx.square();
-  if (sq) actions.push({ label: { text: `⛰ ${ctx.config.cityName} (центр)`, color: 'gold' }, action: { type: 'run_command', command: `/tp @s ${ctx.state.city.cx} ${sq.y + 2} ${ctx.state.city.cz + 7}` } });
-  actions.push({ label: { text: '🗺 Карта города', color: 'aqua' }, tooltip: { text: 'Живая карта в браузере' }, action: { type: 'open_url', url: `http://127.0.0.1:${ctx.port()}/map` } });
-  actions.push({ label: { text: '⚙ Настройки', color: 'aqua' }, width: 30, action: { type: 'open_url', url: `http://127.0.0.1:${ctx.port()}/` } });
-  const body = { type: 'plain_message', contents: { text: followTargets.length ? 'Кто ждёт тебя — сверху. Имя — телепорт, 👁 — следить.' : 'Пока ни одного строителя.' } };
-  return { type: 'multi_action', title: { text: `Ратуша ${ctx.config.cityName}` }, body, actions, columns: 2 };
+  if (sq) actions.push({ label: { text: `⛰ ${t('town.hall.centre', { city: ctx.config.cityName })}`, color: 'gold' }, action: { type: 'run_command', command: `/tp @s ${ctx.state.city.cx} ${sq.y + 2} ${ctx.state.city.cz + 7}` } });
+  actions.push({ label: { text: `🗺 ${t('town.hall.map')}`, color: 'aqua' }, tooltip: { text: t('town.hall.mapTip') }, action: { type: 'open_url', url: `http://127.0.0.1:${ctx.port()}/map` } });
+  actions.push({ label: { text: `⚙ ${t('town.hall.settings')}`, color: 'aqua' }, width: 30, action: { type: 'open_url', url: `http://127.0.0.1:${ctx.port()}/` } });
+  const body = { type: 'plain_message', contents: { text: followTargets.length ? t('town.hall.body') : t('town.hall.empty') } };
+  return { type: 'multi_action', title: { text: t('town.hall.title', { city: ctx.config.cityName }) }, body, actions, columns: 2 };
 }
 
 const townHall = {
   id: 'townHall',
-  group: 'Информация',
-  label: 'Ратуша',
-  description: 'Окно со всеми строителями: кто ждёт тебя — сверху, клик — телепорт. Открывается из меню паузы или ссылкой [Ратуша] в чате.',
+  group: 'info',
+  label: 'Town hall',
+  description: 'A window with every builder: those waiting for you on top, click to teleport. Opens from the pause menu or the [Town hall] link in chat.',
   presets: ['basic'],
   async setup(ctx) {
     await ctx.cmd('scoreboard objectives add alps_hall trigger');
@@ -274,7 +310,7 @@ const townHall = {
     ctx.fx.push('scoreboard players enable @a alps_follow', { key: 'follow:enable' });
   },
   async onPlayerJoin(ctx, name) {
-    await ctx.tellraw(name, [{ text: '  ⌂ ', color: 'gray' }, { text: '[Ратуша]', color: 'aqua', click_event: { action: 'run_command', command: '/trigger alps_hall' }, hover_event: { action: 'show_text', value: 'Все строители и телепорт к ним' } }, { text: '  список строителей; ещё она есть в меню паузы', color: 'gray' }]);
+    await ctx.tellraw(name, [{ text: '  ⌂ ', color: 'gray' }, { text: `[${t('town.hall.name')}]`, color: 'aqua', click_event: { action: 'run_command', command: '/trigger alps_hall' }, hover_event: { action: 'show_text', value: t('town.hall.linkTip') } }, { text: `  ${t('town.hall.link')}`, color: 'gray' }]);
   },
   async onTick(ctx, now) {
     if (now < (townHall.next ?? 0)) return;
@@ -301,17 +337,17 @@ async function followRequests(ctx) {
     await ctx.cmd(`scoreboard players enable ${name} alps_follow`);
     const s = ctx.sessions().find((x) => x.id === followTargets[n - 1]);
     if (!s || !(await ctx.cmd(`execute if entity ${ctx.builderSel(s)}`)).includes('passed')) {
-      await ctx.tellraw(name, [{ text: 'Строитель сейчас не на стройке — открой Ратушу ещё раз.', color: 'gray' }]);
+      await ctx.tellraw(name, [{ text: t('town.follow.gone'), color: 'gray' }]);
       continue;
     }
     await ctx.cmd(`gamemode spectator ${name}`);
     await ctx.cmd(`spectate ${ctx.builderSel(s)} ${name}`);
     await ctx.tellraw(name, [
-      { text: '👁 Следишь за ', color: 'gray' }, { text: ctx.cleanText(s.name, 26), color: 'yellow' },
-      { text: '. Shift — отцепиться. ', color: 'gray' },
-      { text: '[в творческий]', color: 'aqua', click_event: { action: 'run_command', command: '/gamemode creative' } },
+      { text: `👁 ${t('town.follow.on')} `, color: 'gray' }, { text: ctx.cleanText(s.name, 26), color: 'yellow' },
+      { text: `. ${t('town.follow.shift')} `, color: 'gray' },
+      { text: `[${t('town.follow.creative')}]`, color: 'aqua', click_event: { action: 'run_command', command: '/gamemode creative' } },
       { text: ' ', color: 'gray' },
-      { text: '[Ратуша]', color: 'aqua', click_event: { action: 'run_command', command: '/trigger alps_hall' } },
+      { text: `[${t('town.hall.name')}]`, color: 'aqua', click_event: { action: 'run_command', command: '/trigger alps_hall' } },
     ]);
   }
 }
@@ -320,9 +356,9 @@ async function followRequests(ctx) {
 
 const locatorBar = {
   id: 'locatorBar',
-  group: 'Информация',
-  label: 'Строители на locator bar',
-  description: 'Строители видны на панели locator bar; кто ждёт тебя — красной точкой. (Панель видна в режиме выживания/приключения.)',
+  group: 'info',
+  label: 'Builders on the locator bar',
+  description: 'Builders show up on the locator bar; those waiting for you as a red dot. (The bar is visible in survival/adventure mode.)',
   presets: [],
   onBuilderSpawn(ctx, s) {
     ctx.rt(s).wpColor = null;
@@ -347,13 +383,12 @@ const locatorBar = {
 // --- 26: "while you were away".
 
 const snapshot = (ctx) => ({ houses: ctx.state.totals.houses ?? 0, commits: ctx.state.totals.commits ?? 0, prs: ctx.state.totals.prs ?? 0, objects: Object.values(ctx.state.objects ?? {}).filter((o) => o.done).length });
-const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many}`;
 
 const whileAway = {
   id: 'whileAway',
-  group: 'Информация',
-  label: '«Пока тебя не было»',
-  description: 'При входе в игру: сколько домов и коммитов появилось за время отсутствия и кто сейчас ждёт тебя — со ссылками-телепортами.',
+  group: 'info',
+  label: '"While you were away"',
+  description: 'When you join: how many houses and commits appeared while you were away and who is waiting for you now, with teleport links.',
   presets: ['basic'],
   async onPlayerJoin(ctx, name) {
     ctx.state.players ??= {};
@@ -362,14 +397,14 @@ const whileAway = {
     const waiting = ctx.sessions().filter((s) => ['permission', 'question'].includes(ctx.rt(s).waiting?.kind) && s.at);
     if (prev && Date.now() - prev.seen > 10 * 60000) {
       const d = { houses: now.houses - prev.snap.houses, commits: now.commits - prev.snap.commits, prs: now.prs - prev.snap.prs, objects: now.objects - (prev.snap.objects ?? 0) };
-      const bits = [d.houses > 0 && plural(d.houses, 'дом', 'дома', 'домов'), d.objects > 0 && plural(d.objects, 'скамейка/дерево', 'скамейки/деревья', 'скамеек/деревьев'), d.commits > 0 && plural(d.commits, 'коммит', 'коммита', 'коммитов'), d.prs > 0 && `${d.prs} PR`].filter(Boolean);
+      const bits = [d.houses > 0 && t('common.houses', { count: d.houses }), d.objects > 0 && t('town.away.objects', { count: d.objects }), d.commits > 0 && t('town.away.commits', { count: d.commits }), d.prs > 0 && `${d.prs} PR`].filter(Boolean);
       const hours = (Date.now() - prev.seen) / 3600000;
-      const away = hours >= 1 ? `${Math.floor(hours)} ч` : `${Math.round(hours * 60)} мин`;
-      if (bits.length) await ctx.tellraw(name, [{ text: `Пока тебя не было (${away}): `, color: 'gold' }, { text: bits.join(', '), color: 'yellow' }]);
+      const away = hours >= 1 ? t('status.ago.hours', { count: Math.floor(hours) }) : t('status.ago.min', { count: Math.round(hours * 60) });
+      if (bits.length) await ctx.tellraw(name, [{ text: `${t('town.away.title', { away })} `, color: 'gold' }, { text: bits.join(', '), color: 'yellow' }]);
     }
     for (const s of waiting.slice(0, 5)) {
       const [x, y, z] = ctx.siteOf(s.at).front;
-      await ctx.tellraw(name, [{ text: '  ⌛ ', color: 'red' }, { text: s.name, color: 'yellow' }, { text: ' ждёт тебя ', color: 'gray' }, { text: '[телепорт]', color: 'aqua', click_event: { action: 'run_command', command: `/tp @s ${x + 0.5} ${y} ${z + 2.5}` } }]);
+      await ctx.tellraw(name, [{ text: '  ⌛ ', color: 'red' }, { text: s.name, color: 'yellow' }, { text: ` ${t('town.away.waiting')} `, color: 'gray' }, { text: t('common.teleport'), color: 'aqua', click_event: { action: 'run_command', command: `/tp @s ${x + 0.5} ${y} ${z + 2.5}` } }]);
     }
   },
   onPlayers(ctx, names) {

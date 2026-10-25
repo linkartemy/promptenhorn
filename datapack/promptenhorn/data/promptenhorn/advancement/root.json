@@ -7,7 +7,7 @@
       "text": "Promptenhorn"
     },
     "description": {
-      "text": "Город, который строят чаты с Claude"
+      "text": "A town built by chats with Claude"
     },
     "background": "minecraft:gui/advancements/backgrounds/stone",
     "show_toast": false,

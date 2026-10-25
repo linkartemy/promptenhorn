@@ -1,23 +1,25 @@
+import { t } from '../i18n.mjs';
+
 // Ideas 23 + 7 — what a chat is doing, readable at a glance: a status line under the builder's name
 // ("✎ правит · 64%", "⌛ ждёт тебя", "☾ спит 2 ч") and the matching tool in its hand (book for reading,
 // brush for edits, pickaxe for shell commands…). Both only send a command when the text or the tool
 // category actually changes, so a burst of tool calls costs nothing extra.
 const CATS = {
-  read: { icon: '⌕', verb: 'читает', item: 'minecraft:book' },
-  edit: { icon: '✎', verb: 'правит', item: 'minecraft:brush' },
-  bash: { icon: '⚒', verb: 'команды', item: 'minecraft:iron_pickaxe' },
-  web: { icon: '✉', verb: 'ищет в сети', item: 'minecraft:compass' },
-  agent: { icon: '☺', verb: 'с подмастерьями', item: 'minecraft:bell' },
-  plan: { icon: '☰', verb: 'планирует', item: 'minecraft:writable_book' },
-  mcp: { icon: '⚙', verb: 'инструменты', item: 'minecraft:amethyst_shard' },
-  other: { icon: '⚙', verb: 'работает', item: null },
+  read: { icon: '⌕', item: 'minecraft:book' },
+  edit: { icon: '✎', item: 'minecraft:brush' },
+  bash: { icon: '⚒', item: 'minecraft:iron_pickaxe' },
+  web: { icon: '✉', item: 'minecraft:compass' },
+  agent: { icon: '☺', item: 'minecraft:bell' },
+  plan: { icon: '☰', item: 'minecraft:writable_book' },
+  mcp: { icon: '⚙', item: 'minecraft:amethyst_shard' },
+  other: { icon: '⚙', item: null },
 };
 const RECENT_MS = 90000; // a tool category older than this no longer describes what the chat does
 
 function ago(ms) {
   const min = Math.floor(ms / 60000);
-  if (min < 60) return `${Math.max(1, Math.round(min / 10) * 10)} мин`;
-  return `${Math.floor(min / 60)} ч`;
+  if (min < 60) return t('status.ago.min', { count: Math.max(1, Math.round(min / 10) * 10) });
+  return t('status.ago.hours', { count: Math.floor(min / 60) });
 }
 
 function statusOf(ctx, s, site) {
@@ -26,31 +28,35 @@ function statusOf(ctx, s, site) {
   const rec = site?.rec;
   const pct = rec ? Math.floor((20 * rec.placed) / Math.max(1, rec.total)) * 5 : 0; // 5 % steps
   const w = r.waiting;
-  if (w?.kind === 'permission') return ['⌛ ждёт твоего разрешения', 'red'];
-  if (w?.kind === 'question') return ['? ждёт ответа на вопрос', 'red'];
-  if (now < r.limitUntil) return ['⚡ лимит API, пауза', 'yellow'];
-  if (now < r.compactUntil) return ['☕ перекур: сжимает память', 'aqua'];
-  if (s.active && s.planMode) return ['✐ планирует, стройка ждёт плана', 'light_purple'];
+  if (w?.kind === 'permission') return [`⌛ ${t('status.permission')}`, 'red'];
+  if (w?.kind === 'question') return [`? ${t('status.question')}`, 'red'];
+  if (!s.active && now < r.limitUntil) return [`⚡ ${t('status.limit')}`, 'yellow']; // a new prompt ends the pause
+  if (now < r.compactUntil) return [`☕ ${t('status.compact')}`, 'aqua'];
+  if (s.active && s.planMode) return [`✐ ${t('status.plan')}`, 'light_purple'];
   if (s.active) {
     const c = CATS[r.toolCat] && now - (r.toolAt ?? 0) < RECENT_MS ? CATS[r.toolCat] : CATS.other;
-    return [`${c.icon} ${c.verb} · ${pct}%`, 'green'];
+    return [`${c.icon} ${t(`status.verb.${CATS[r.toolCat] && now - (r.toolAt ?? 0) < RECENT_MS ? r.toolCat : 'other'}`)} · ${pct}%`, 'green'];
   }
-  if (String(s.pose).includes('sleeping')) return [`☾ спит ${ago(now - s.lastEvent)}`, 'gray'];
-  if (w?.kind === 'idle') return [`… ждёт задачу · ${pct}%`, 'yellow'];
-  return [`· отдыхает · ${pct}%`, 'gray'];
+  if (String(s.pose).includes('sleeping')) return [`☾ ${t('status.sleeping', { ago: ago(now - s.lastEvent) })}`, 'gray'];
+  if (r.feier) return [`☕ ${t('status.feierabend')}`, 'gold'];
+  if (w?.kind === 'idle') return [`… ${t('status.idle')} · ${pct}%`, 'yellow'];
+  return [`· ${t('status.resting')} · ${pct}%`, 'gray'];
 }
 
 const status = {
   id: 'status',
-  group: 'Строители',
-  label: 'Статус под именем',
-  description: 'Под ником строителя строка: чем занят чат («✎ правит · 64%»), ждёт ли тебя, спит ли и сколько.',
+  group: 'builders',
+  label: 'Status under the name',
+  description: 'A line under the builder\'s name: what the chat is doing ("✎ editing · 64%"), whether it waits for you, whether it sleeps and for how long.',
   presets: ['basic'],
   setup(ctx) {
     for (const s of ctx.sessions()) ctx.rt(s).statusKey = null;
   },
   onBuilderSpawn(ctx, s) {
     ctx.rt(s).statusKey = null;
+  },
+  onLanguage(ctx) {
+    for (const s of ctx.sessions()) ctx.rt(s).statusKey = null; // redraw the lines in the new language
   },
   onWork(ctx, s, site) {
     const [text, color] = statusOf(ctx, s, site);
@@ -70,9 +76,9 @@ const status = {
 
 const toolInHand = {
   id: 'toolInHand',
-  group: 'Строители',
-  label: 'Инструмент в руке',
-  description: 'Строитель держит то, чем сейчас работает чат: книгу (чтение), кисть (правки), кирку (команды), компас (веб), колокольчик (субагенты).',
+  group: 'builders',
+  label: 'Tool in hand',
+  description: 'The builder holds what the chat is working with: a book (reading), a brush (edits), a pickaxe (commands), a compass (web), a bell (subagents).',
   presets: ['basic'],
   handPriority: 80,
   handItem(ctx, s) {

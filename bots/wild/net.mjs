@@ -41,12 +41,14 @@ export class Interrupted extends Error {
  * client and server disagree about where the bot is; release the controls, hop and plan again.
  * `shouldStop()` is polled so a combat reflex can abort a walk.
  */
-export async function walkTo(bot, goal, { timeout = 30000, retries = 4, shouldStop = () => false } = {}) {
+export async function walkTo(bot, goal, { timeout = 30000, retries = 4, shouldStop = () => false, onStuck = null } = {}) {
   const deadline = Date.now() + timeout;
   let forced = [];
   const onForced = () => forced.push(Date.now());
   bot.on('forcedMove', onForced);
   try {
+    let lastError = '';
+    let unstuckOnce = false;
     for (let attempt = 0; attempt <= retries; attempt++) {
       forced = [];
       let timer;
@@ -70,15 +72,22 @@ export async function walkTo(bot, goal, { timeout = 30000, retries = 4, shouldSt
         if (!retryable || Date.now() > deadline) return { ok: false, error: e.message, attempts: attempt + 1 };
         if (/No path/i.test(e.message) && attempt >= 1) return { ok: false, error: e.message, attempts: attempt + 1 };
         await bot.waitForTicks(8).catch(() => {});
+        // the server keeps resetting us (seen when the bot stands flush against a block edge):
+        // let the caller re-centre the bot in its cell (RCON tp), which clears the disagreement
+        if (e.stuck && onStuck && !unstuckOnce) {
+          unstuckOnce = true;
+          await onStuck().catch(() => {});
+        } else if (e.stuck && unstuckOnce) return { ok: false, error: 'server-stuck', stuck: true, attempts: attempt + 1 };
         bot.setControlState('jump', true);
         await bot.waitForTicks(4).catch(() => {});
         bot.setControlState('jump', false);
         bot.walkStuckCount = (bot.walkStuckCount ?? 0) + 1;
+        lastError = e.message;
       } finally {
         clearInterval(timer);
       }
     }
-    return { ok: false, error: 'retries', attempts: retries + 1 };
+    return { ok: false, error: `retries: ${lastError}`, attempts: retries + 1 };
   } finally {
     bot.off('forcedMove', onForced);
   }

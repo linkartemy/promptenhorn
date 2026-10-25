@@ -22,6 +22,10 @@ export class Combat {
     this.kills = 0;
   }
 
+  isHostile(e) {
+    return isHostile(e);
+  }
+
   /** The most dangerous hostile worth fighting, or null. */
   threat(radius = 12) {
     const bot = this.bot;

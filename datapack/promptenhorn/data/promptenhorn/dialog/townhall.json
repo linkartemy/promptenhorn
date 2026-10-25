@@ -1,17 +1,17 @@
 {
   "type": "minecraft:notice",
   "title": {
-    "text": "Ратуша Promptenhorn"
+    "text": "Promptenhorn town hall"
   },
   "body": {
     "type": "minecraft:plain_message",
     "contents": {
-      "text": "Список строителей: кто ждёт тебя, кто работает. Клик по имени — телепорт."
+      "text": "List of builders: who is waiting for you, who is working. Click a name to teleport."
     }
   },
   "action": {
     "label": {
-      "text": "Открыть ратушу"
+      "text": "Open the town hall"
     },
     "action": {
       "type": "minecraft:run_command",

@@ -5,10 +5,10 @@
       "id": "minecraft:red_banner"
     },
     "title": {
-      "text": "Флаг поднят"
+      "text": "Flag raised"
     },
     "description": {
-      "text": "Первый pull request"
+      "text": "The first pull request"
     },
     "frame": "task",
     "show_toast": true,

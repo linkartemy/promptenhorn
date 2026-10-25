@@ -5,10 +5,10 @@
       "id": "minecraft:lightning_rod"
     },
     "title": {
-      "text": "Гроза в горах"
+      "text": "Storm in the mountains"
     },
     "description": {
-      "text": "Чат упёрся в лимит API"
+      "text": "A chat hit the API limit"
     },
     "frame": "task",
     "show_toast": true,

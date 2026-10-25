@@ -5,10 +5,10 @@
       "id": "minecraft:suspicious_stew"
     },
     "title": {
-      "text": "Перекур"
+      "text": "Coffee break"
     },
     "description": {
-      "text": "Чат впервые сжал свою память"
+      "text": "A chat compacted its memory for the first time"
     },
     "frame": "task",
     "show_toast": true,

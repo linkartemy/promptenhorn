@@ -9,10 +9,13 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const pp = require('prismarine-physics');
 
-if (!pp.__wildPatched) {
+if (!pp.__wildPatched && !process.env.WILD_NO_PHYSICS_PATCH) {
   const Original = pp.Physics;
   pp.Physics = function PatchedPhysics(mcData, world) {
     const physics = Original(mcData, world);
+    // Keep a hair of distance from walls: when the client settles exactly flush against a block,
+    // Paper 1.21.11 treats it as a new collision, rejects the move and teleports the bot back, forever.
+    physics.playerHalfWidth = 0.3 + (Number(process.env.WILD_BB_PAD) || 0.002);
     const simulate = physics.simulatePlayer;
     physics.simulatePlayer = function (state, w) {
       if (state.onGround) return simulate.call(this, state, w);

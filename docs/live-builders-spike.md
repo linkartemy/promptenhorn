@@ -167,7 +167,17 @@ interface BuilderBackend {
 | `bots/package.json` | Mineflayer 4.39.0 and plugins, versions pinned exactly |
 | `bots/common.mjs` | Connection (experimental server only), RCON, block parsing, `walkTo` with stall workarounds |
 | `bots/live-builder.mjs` | Mode 2: `--mode hand\|hybrid --type chalet --seed … [--limit N] [--fly]` |
-| `bots/wild.mjs` | Mode 3: scenario for two bots (not run) |
+| `bots/wild.mjs` | Mode 3: scenario for two bots (not run; removed later, see the update below) |
 | `bots/load-test.mjs` | Load of N bots: MSPT, TPS, chunks, RSS and CPU of java and node (not run) |
 | `bots/walk-test.mjs`, `bots/probe.mjs` | Walking test and terrain scouting |
 | `.dev/wild-server/` | Experimental Paper 1.21.11 (25567 / RCON 25577), `start-server.cmd` |
+
+## Update: mode 2 shipped (25.10.2026)
+
+Mode 2 is now the "realistic" Builders mode (README, "Builders: fast or realistic"; code in `bridge/builders/` and `bots/runner.mjs`, `bots/worker.mjs`, `bots/place.mjs`). Findings that change this spike:
+
+- **Physics desync: root cause found and fixed.** It is not the step-up rule. prismarine-physics stops the hit box exactly at a wall; the server builds the player box from the float `0.6F` (half width 0.30000001192…), so at the client's position the server box overlaps the wall by ~1e-8 and Paper refuses the move as `CLIPPED_INTO_BLOCK` (no log line), every tick while the bot keeps walking into the far side of a dip. Fix: `bot.physics.playerHalfWidth = 0.3001` (`bots/physics-patch.mjs`). Dip course (`bots/physics-test.mjs`): 0 resets, 8.7 s per run; before: 2–549 resets and 9.5–40 s. No source patch of prismarine-physics needed.
+- Speed of a whole house by one bot, roof included: 115–135 blocks/min (townhouse 1794 blocks in 13.3 min, café 1494 in 12.9 min); 150–250/min on ground floors, 40–70/min on high roofs. 98–99 % of the blocks by hand. Final read-back: 0 mismatches on every bot-built house.
+- Load: one runner process with 3 bots: 205–230 MB RSS, 10–35 % of one core. Server MSPT on the shared test server rose from 3.7 ms to ~7.5 ms with 3 active bots (TPS 20); bots load chunks within the server's simulation distance, clustered bots share them.
+- Vanilla advancements of the bots are granted silently once (the 1.21.11 gamerule is `show_advancement_messages`, not `announce_advancements`).
+- `bots/wild.mjs` was removed (the colonists live in `bots/wild/`), together with `mineflayer-pvp`, `-collectblock`, `-auto-eat`, `-armor-manager`.

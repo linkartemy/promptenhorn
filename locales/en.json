@@ -1,9 +1,4 @@
 {
-  "bots.say.arrive": "Off to build the {what}!",
-  "bots.say.done": "Done! The {what} is standing.",
-  "bots.say.waiting": "I need your OK over here!",
-  "bots.say.question": "I have a question for you!",
-  "bots.say.sleep": "Calling it a day. Good night!",
   "common.city.founded": "City {city} founded",
   "common.district.new": "New district: {name}",
   "common.teleport": "[teleport]",

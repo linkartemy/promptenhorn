@@ -1,9 +1,11 @@
 // Installs the Promptenhorn data pack (datapack/promptenhorn: advancements, town hall dialog) into the
 // world's datapacks folder when it is missing or outdated, then reloads data packs (the vanilla
-// `minecraft:reload`, not Paper's plugin reload) and enables it. Runs at most once per RCON connection.
+// `minecraft:reload`, not Paper's plugin reload) and enables it. Runs at most once per RCON connection
+// and language: the pack's texts are rendered from the locale catalog (datapack/build.mjs packFiles()).
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
+import { packFiles } from '../../datapack/build.mjs';
+import { language } from '../i18n.mjs';
 
 function filesOf(dir, base = dir, out = []) {
   for (const name of fs.readdirSync(dir).sort()) {
@@ -14,40 +16,30 @@ function filesOf(dir, base = dir, out = []) {
   return out;
 }
 
-function digest(dir) {
-  if (!fs.existsSync(dir)) return null;
-  const h = crypto.createHash('sha256');
-  for (const f of filesOf(dir)) {
-    h.update(f);
-    h.update(fs.readFileSync(path.join(dir, f)));
-  }
-  return h.digest('hex');
-}
-
 let installing = null;
 let connection = 0;
+let installedLanguage = null;
 
 /** Call from setup(); resolves to true when the pack is installed and enabled. */
 export function ensureDatapack(ctx) {
   const conn = ctx.connection?.() ?? 0;
-  if (installing && conn === connection) return installing;
+  if (installing && conn === connection && installedLanguage === language()) return installing;
   connection = conn;
+  installedLanguage = language();
   installing = (async () => {
-    const src = path.join(ctx.root, 'datapack', 'promptenhorn');
+    const files = packFiles(installedLanguage);
     const dst = path.join(ctx.worldDir(), 'datapacks', 'promptenhorn');
-    if (!fs.existsSync(src)) {
-      ctx.log('datapack/promptenhorn is missing: run `node datapack/build.mjs`');
-      return false;
-    }
+    const present = fs.existsSync(dst) ? filesOf(dst) : [];
+    const same = present.length === files.length && files.every((f) => present.includes(f.rel) && fs.readFileSync(path.join(dst, f.rel), 'utf8') === f.text);
     let copied = false;
-    if (digest(src) !== digest(dst)) {
+    if (!same) {
       fs.rmSync(dst, { recursive: true, force: true });
-      for (const f of filesOf(src)) {
-        fs.mkdirSync(path.dirname(path.join(dst, f)), { recursive: true });
-        fs.copyFileSync(path.join(src, f), path.join(dst, f));
+      for (const f of files) {
+        fs.mkdirSync(path.dirname(path.join(dst, f.rel)), { recursive: true });
+        fs.writeFileSync(path.join(dst, f.rel), f.text);
       }
       copied = true;
-      ctx.log(`Installed the Promptenhorn data pack into ${dst}`);
+      ctx.log(`Installed the Promptenhorn data pack (${installedLanguage}) into ${dst}`);
     }
     let enabled = (await ctx.cmd('datapack list enabled')).includes('file/promptenhorn');
     if (copied || !enabled) {

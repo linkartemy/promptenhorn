@@ -14,9 +14,9 @@ let timeAt = 0;
 
 const realTime = {
   id: 'realTime',
-  group: 'Город',
-  label: 'Реальные сутки',
-  description: 'Время в мире идёт по твоим часам: ночью в городе ночь, утром рассвет. Обновляется раз в минуту.',
+  group: 'city',
+  label: 'Real day and night',
+  description: 'World time follows your clock: night in town at night, sunrise in the morning. Updated once a minute.',
   presets: [],
   async setup(ctx) {
     await ctx.cmd('gamerule advance_time false');
@@ -45,9 +45,9 @@ async function lightsOff(ctx, plot) {
 
 const windows = {
   id: 'windows',
-  group: 'Город',
-  label: 'Свет в окнах',
-  description: 'В доме, который сейчас строит работающий чат, горит свет. Ночью сверху сразу видно, кто работает.',
+  group: 'city',
+  label: 'Lights in the windows',
+  description: 'The house a working chat is building has its lights on. At night you see at a glance who is working.',
   presets: ['basic'],
   always: ['onFinish', 'onRetire', 'onBuilderLeave'],
   async onWork(ctx, s, site) {
@@ -94,11 +94,14 @@ const windows = {
 const campfire = (block, lit, signal) => block.replace(/lit=(true|false)/, `lit=${lit}`).replace(/signal_fire=(true|false)/, `signal_fire=${signal}`);
 
 async function setChimney(ctx, plot, mode) {
-  if ((plot.chimney ?? 'built') === mode) return;
+  if ((plot.chimney ?? 'built') === mode) return true;
   for (const c of ctx.meta(plot).campfires) {
     if (c.i >= plot.placed && !plot.done) continue; // not built yet
     const block = mode === 'built' ? c.block : mode === 'working' ? campfire(c.block, true, true) : campfire(c.block, false, false);
-    await ctx.cmd(`setblock ${plot.x0 + c.x} ${plot.y + c.y} ${plot.z0 + c.z} ${block}`);
+    const [x, y, z] = [plot.x0 + c.x, plot.y + c.y, plot.z0 + c.z];
+    // Only onto the campfire itself, and only where the chunk is loaded (else: next time).
+    if (!(await ctx.cmd(`execute if loaded ${x} ${y} ${z}`)).includes('passed')) return false;
+    await ctx.cmd(`execute if block ${x} ${y} ${z} minecraft:campfire run setblock ${x} ${y} ${z} ${block}`);
   }
   plot.chimney = mode;
   if (mode === 'built') delete plot.chimney;
@@ -107,23 +110,26 @@ async function setChimney(ctx, plot, mode) {
 
 const chimney = {
   id: 'chimney',
-  group: 'Город',
-  label: 'Дым из трубы',
-  description: 'Пока чат работает, из трубы его дома идёт высокий столб дыма; когда простаивает — труба холодная.',
+  group: 'city',
+  label: 'Chimney smoke',
+  description: 'While a chat works, a tall column of smoke rises from its house\'s chimney; when it idles, the chimney is cold.',
   presets: ['basic'],
   always: ['onFinish', 'onBuilderLeave', 'onRetire'],
   async onWork(ctx, s, site) {
-    const plot = site.obj ? null : site.plot;
+    // The chat's own house smokes while it works, wherever its builder is (public works, a bench…);
+    // a house under construction once its campfire stands.
+    const home = ctx.sessionPlot(s);
+    const plot = home?.done && home.type !== 'park' ? home : site.obj ? null : site.plot;
     if (!plot || plot.type === 'park' || !ctx.meta(plot).campfires.length) return;
     const r = ctx.rt(s);
     if (Date.now() < (r.chimneyNext ?? 0)) return;
     r.chimneyNext = Date.now() + 3000;
-    const built = ctx.meta(plot).campfires.some((c) => c.i < plot.placed);
+    const built = plot.done || ctx.meta(plot).campfires.some((c) => c.i < plot.placed);
     if (!built) return;
     // Re-placing the campfire after it was (re)built resets it, so track per placed count too.
     if (plot.chimneyAt !== plot.placed && s.active) delete plot.chimney;
     plot.chimneyAt = plot.placed;
-    await setChimney(ctx, plot, s.active ? 'working' : 'cold');
+    if (!(await setChimney(ctx, plot, s.active ? 'working' : 'cold'))) r.chimneyNext = Date.now() + 30000;
   },
   async onFinish(ctx, s, plot) {
     plot.chimney = 'x';

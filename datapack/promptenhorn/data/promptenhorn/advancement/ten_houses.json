@@ -5,10 +5,10 @@
       "id": "minecraft:oak_door"
     },
     "title": {
-      "text": "Десять крыш"
+      "text": "Ten roofs"
     },
     "description": {
-      "text": "В городе 10 домов"
+      "text": "10 houses in town"
     },
     "frame": "task",
     "show_toast": true,

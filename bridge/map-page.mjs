@@ -4,8 +4,9 @@
 // clicks (POST /api/map/tp). Same guards as the settings page: Host must be this bridge, POST needs
 // JSON and our own Origin (or none, for local tools), Sec-Fetch-Site must not be cross-site.
 import { PLOT } from './terrain.mjs';
+import { t, tParts, strings, htmlLang, language } from './i18n.mjs';
 
-const VERB = { read: 'читает', edit: 'правит', bash: 'запускает команды', web: 'ищет в сети', agent: 'с подмастерьями', plan: 'планирует', mcp: 'инструменты', other: 'работает' };
+const VERBS = new Set(['read', 'edit', 'bash', 'web', 'agent', 'plan', 'mcp', 'other']);
 const RECENT_MS = 90000; // a tool category older than this no longer describes what the chat does
 const NAME = /^\w{1,16}$/;
 
@@ -40,18 +41,18 @@ export class MapPage {
     const st = w === 'permission' || w === 'question' ? 'waiting' : s.active ? 'working' : sleeping ? 'sleeping' : 'idle';
     const helping = this.d.renovator.helping(s);
     let activity;
-    if (w === 'permission') activity = 'ждёт твоего разрешения' + (r.waiting.tool ? ` (${r.waiting.tool})` : '');
-    else if (w === 'question') activity = 'ждёт ответа на вопрос';
-    else if (now < (r.limitUntil ?? 0)) activity = 'лимит API, пауза';
-    else if (now < (r.compactUntil ?? 0)) activity = 'перекур: сжимает память';
-    else if (s.active && s.planMode) activity = 'планирует, стройка ждёт плана';
+    if (w === 'permission') activity = r.waiting.tool ? t('map.activity.permissionTool', { tool: r.waiting.tool }) : t('map.activity.permission');
+    else if (w === 'question') activity = t('map.activity.question');
+    else if (now < (r.limitUntil ?? 0)) activity = t('map.activity.limit');
+    else if (now < (r.compactUntil ?? 0)) activity = t('map.activity.compact');
+    else if (s.active && s.planMode) activity = t('map.activity.plan');
     else if (s.active) {
-      const verb = VERB[r.toolCat] && now - (r.toolAt ?? 0) < RECENT_MS ? VERB[r.toolCat] : VERB.other;
-      activity = verb + (r.agents?.size ? ` · подмастерьев: ${r.agents.size}` : '');
-    } else if (helping) activity = 'помогает с ремонтом';
-    else if (sleeping) activity = 'спит';
-    else if (w === 'idle') activity = 'ждёт задачу';
-    else activity = 'отдыхает';
+      const verb = VERBS.has(r.toolCat) && now - (r.toolAt ?? 0) < RECENT_MS ? r.toolCat : 'other';
+      activity = t(`map.verb.${verb}`) + (r.agents?.size ? t('map.activity.agents', { count: r.agents.size }) : '');
+    } else if (helping) activity = t('map.activity.helping');
+    else if (sleeping) activity = t('map.activity.sleeping');
+    else if (w === 'idle') activity = t('map.activity.idle');
+    else activity = t('map.activity.resting');
 
     // Where the entity actually is: the last block it walked to (tracked by the bridge), the lot being
     // renovated when it helps the crew, else the front of the site it stands at.
@@ -96,6 +97,12 @@ export class MapPage {
         outdated: !!p.done && p.type !== 'park' && p.gen !== d.gens.current,
         renovating: renov?.key === p.key ? (renov.pct ?? 0) : null,
         builder: p.sessionId && !p.done ? state.sessions[p.sessionId]?.name ?? null : null,
+        // Offline engine: progress the chat has earned but the server has not placed yet (bridge/builders/offline.mjs).
+        vpct: (() => {
+          const owner = p.sessionId && !p.done ? state.sessions[p.sessionId] : null;
+          const owed = owner && owner.job === `plot:${p.key}` ? Math.floor(Number(owner.backlog) || 0) : 0;
+          return owed ? Math.min(100, Math.floor((100 * ((p.placed ?? 0) + owed)) / Math.max(1, p.total ?? 1))) : null;
+        })(),
       };
     });
     const objs = Object.values(state.objects ?? {});
@@ -120,19 +127,19 @@ export class MapPage {
   async teleport(body) {
     const { cmd, siteOf, builderSel, log } = this.d;
     const now = Date.now();
-    if (now - this.lastTp < 400) throw Object.assign(new Error('Слишком часто, подожди секунду'), { code: 429 });
+    if (now - this.lastTp < 400) throw Object.assign(new Error(t('map.err.tooOften')), { code: 429 });
     this.lastTp = now;
-    if (!this.d.connected()) throw new Error('Сервер Minecraft не подключён');
+    if (!this.d.connected()) throw new Error(t('map.err.offline'));
     const players = this.d.players();
-    if (!players.length) throw new Error('В игре никого нет: зайди на сервер, и телепорт заработает');
+    if (!players.length) throw new Error(t('map.err.nobody'));
     const asked = typeof body?.player === 'string' ? body.player : '';
     const player = players.includes(asked) ? asked : players.length === 1 ? players[0] : null;
-    if (!player || !NAME.test(player)) throw new Error('Выбери игрока');
+    if (!player || !NAME.test(player)) throw new Error(t('map.err.pickPlayer'));
     const leaveCamera = () => cmd(`execute as ${player} run spectate`).catch(() => ''); // stops a previous «follow»; harmless otherwise
 
     if (typeof body?.plot === 'string') {
       const site = siteOf(`plot:${body.plot}`);
-      if (!site) throw new Error('Нет такого участка');
+      if (!site) throw new Error(t('map.err.noPlot'));
       const [x, y, z] = site.front;
       const [hx, hz] = site.look;
       const yaw = Math.round((Math.atan2(-(hx - x), hz - z) * 180) / Math.PI);
@@ -142,9 +149,9 @@ export class MapPage {
     }
 
     const s = typeof body?.sessionId === 'string' && Object.hasOwn(this.state.sessions, body.sessionId) ? this.state.sessions[body.sessionId] : null;
-    if (!s || s.retired) throw new Error('Нет такого строителя');
+    if (!s || s.retired) throw new Error(t('map.err.noBuilder'));
     const site = siteOf(s.at);
-    if (!site) throw new Error(`${s.name} ещё не вышел на участок`);
+    if (!site) throw new Error(t('map.err.notOnSite', { name: s.name }));
     const sel = builderSel(s);
     const mode = body.mode === 'follow' ? 'follow' : 'tp';
     await leaveCamera();
@@ -152,18 +159,17 @@ export class MapPage {
     if (!/teleported/i.test(out)) {
       const [x, y, z] = site.front; // entity not found (being re-summoned): its site's front will do
       out = await cmd(`tp ${player} ${x + 0.5} ${y} ${z + 0.5}`);
-      if (mode === 'follow') throw new Error(`${s.name} сейчас не на месте, перенёс к участку`);
+      if (mode === 'follow') throw new Error(t('map.err.notThere', { name: s.name }));
     }
     if (mode === 'follow') {
       await cmd(`gamemode spectator ${player}`);
       const sp = await cmd(`spectate ${sel} ${player}`);
       if (/no entity|not found|error|unknown/i.test(sp)) log(`map follow: ${sp}`);
       const hint = [
-        { text: '' },
-        { text: '◉ Следишь за ', color: 'gray' },
-        { text: s.name, color: 'yellow' },
-        { text: '. Shift — выйти из камеры. ', color: 'gray' },
-        { text: '[в творческий]', color: 'aqua', click_event: { action: 'run_command', command: '/gamemode creative' }, hover_event: { action: 'show_text', value: '/gamemode creative' } },
+        { text: '', color: 'gray' },
+        ...tParts('map.follow.hint', { name: { text: s.name, color: 'yellow' } }),
+        { text: ' ' },
+        { text: t('map.follow.creative'), color: 'aqua', click_event: { action: 'run_command', command: '/gamemode creative' }, hover_event: { action: 'show_text', value: '/gamemode creative' } },
       ];
       await cmd(`tellraw ${player} ${JSON.stringify(hint)}`);
     }
@@ -188,7 +194,7 @@ export class MapPage {
     };
     if (req.method === 'GET' && url === '/map') {
       res.writeHead(200, { ...security, 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'" });
-      res.end(mapPage());
+      res.end(mapPage(language()));
       return true;
     }
     if (req.method === 'GET' && url === '/api/map') {
@@ -224,29 +230,28 @@ export class MapPage {
 // ------------------------------------------------------------------ the page
 
 // Runs in the browser (serialized with Function#toString, so it can use template literals freely).
+// The page's strings arrive as globals L (catalog subset: map.*, building.*) and LANG (BCP 47 tag).
 function client() {
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-  const TYPES = {
-    square: ['Главная площадь', '#d6a84a'],
-    plaza: ['Площадь квартала', '#e3c77e'],
-    park: ['Парк', '#6fae5a'],
-    chalet: ['Шале', '#9b5a33'],
-    townhouse: ['Дом в старом городе', '#d9825b'],
-    cafe: ['Кондитерская', '#e07aa0'],
-    church: ['Церковь', '#8a73c9'],
-    clocktower: ['Часовая башня', '#3f7cc0'],
-    hotel: ['Гранд-отель', '#2a9686'],
-    modern: ['Современный дом', '#7c8a99'],
-    apartment: ['Кооперативный дом', '#c9a22a'],
-    farmhouse: ['Эмментальская ферма', '#7d9a2d'],
-    hut: ['Альпийская хижина', '#8b6d5f'],
+  const plural = new Intl.PluralRules(LANG);
+  // t() of the page: same keys, {name} placeholders and plural forms (params.count) as bridge/i18n.mjs.
+  const tr = (key, p = {}) => {
+    let s = typeof p.count === 'number' ? L[key + '.' + plural.select(p.count)] ?? L[key + '.other'] ?? L[key] : L[key];
+    if (s == null) s = key;
+    return s.replace(/\{(\w+)\}/g, (m, k) => (p[k] != null ? String(p[k]) : m));
   };
+  // HTML version: the template is escaped, params go in as given (callers escape them).
+  const trh = (key, p = {}) => esc(tr(key, typeof p.count === 'number' ? { count: p.count } : {})).replace(/\{(\w+)\}/g, (m, k) => (p[k] != null ? String(p[k]) : m));
+  const TYPES = Object.fromEntries(Object.entries({
+    square: '#d6a84a', plaza: '#e3c77e', park: '#6fae5a', chalet: '#9b5a33', townhouse: '#d9825b', cafe: '#e07aa0', church: '#8a73c9',
+    clocktower: '#3f7cc0', hotel: '#2a9686', modern: '#7c8a99', apartment: '#c9a22a', farmhouse: '#7d9a2d', hut: '#8b6d5f',
+  }).map(([type, color]) => [type, [L['building.' + type] ?? type, color]]));
   const STATES = {
-    waiting: ['ждёт тебя', '#e5243b'],
-    working: ['работает', '#1fa64a'],
-    idle: ['отдыхает', '#f0b90b'],
-    sleeping: ['спит', '#8a8f98'],
+    waiting: [tr('map.state.waiting'), '#e5243b'],
+    working: [tr('map.state.working'), '#1fa64a'],
+    idle: [tr('map.state.idle'), '#f0b90b'],
+    sleeping: [tr('map.state.sleeping'), '#8a8f98'],
   };
   const ORDER = { waiting: 0, working: 1, idle: 2, sleeping: 3 };
   const OBJ = { linden: '#3f8f3a', fir: '#2a6b3d', bench: '#8a5a2b', flowerbed: '#d0569a', lamp: '#f2c94c', well: '#7d8a99', fountain: '#4aa3df', bikestand: '#9aa3ad', summit: '#c8102e' };
@@ -405,6 +410,11 @@ function client() {
         const fh = (bw * p.pct) / 100;
         g.fillStyle = col;
         g.fillRect(bx, by + bw - fh, bw, fh);
+        if (p.vpct > p.pct) {
+          // earned offline, not placed yet: hatched above the real progress
+          const vh = (bw * p.vpct) / 100;
+          hatch(bx, by + bw - vh, bw, vh - fh, 'rgba(0,0,0,.35)');
+        }
         g.setLineDash([Math.max(2, s), Math.max(2, s)]);
         g.strokeStyle = col;
         g.lineWidth = Math.max(1, s * 0.3);
@@ -586,10 +596,10 @@ function client() {
   // --- side list, banner, players
   function fmtAgo(ms) {
     const m = Math.floor(ms / 60000);
-    if (m < 1) return 'только что';
-    if (m < 60) return m + ' мин';
+    if (m < 1) return tr('map.ago.now');
+    if (m < 60) return tr('map.ago.min', { count: m });
     const h = Math.floor(m / 60);
-    return h < 48 ? h + ' ч' : Math.floor(h / 24) + ' д';
+    return h < 48 ? tr('map.ago.hours', { count: h }) : tr('map.ago.days', { count: Math.floor(h / 24) });
   }
 
   function sorted() {
@@ -597,7 +607,7 @@ function client() {
   }
 
   function siteText(b) {
-    if (!b.site) return 'ищет участок';
+    if (!b.site) return esc(tr('map.searching'));
     return esc(b.site.label) + (b.site.pct != null ? ' · ' + b.site.pct + '%' : '');
   }
 
@@ -626,42 +636,43 @@ function client() {
       const color = STATES[b.state][1];
       const wait = b.state === 'waiting' && b.waitSince ? ` · ${fmtAgo(data.now - b.waitSince)}` : '';
       li.className = `b ${b.state}${selected === b.id ? ' sel' : ''}`;
-      setHtml(li.firstChild, `<div class="bh"><span class="dot" style="background:${color}"></span><button class="name link" data-centre="${esc(b.id)}" title="Показать на карте">${esc(b.name)}</button></div>
+      setHtml(li.firstChild, `<div class="bh"><span class="dot" style="background:${color}"></span><button class="name link" data-centre="${esc(b.id)}" title="${esc(tr('map.showOnMap'))}">${esc(b.name)}</button></div>
         <div class="meta">${esc(b.district)} · ${siteText(b)}</div>
         <div class="act" style="color:${b.state === 'waiting' ? color : 'inherit'}">${esc(b.activity)}${wait}${b.state !== 'waiting' ? ' · ' + fmtAgo(data.now - b.lastEvent) : ''}</div>`);
-      setHtml(li.lastChild, b.pos ? `<button data-tp="${esc(b.id)}">Телепорт</button><button data-follow="${esc(b.id)}">Следить</button>` : '<small>между участками — телепорт, когда выйдет на стройку</small>');
+      setHtml(li.lastChild, b.pos ? `<button data-tp="${esc(b.id)}">${esc(tr('map.teleport'))}</button><button data-follow="${esc(b.id)}">${esc(tr('map.follow'))}</button>` : `<small>${esc(tr('map.betweenSites'))}</small>`);
       const want = prev ? prev.nextSibling : ul.firstChild;
       if (want !== li) ul.insertBefore(li, want); // move only when the order really changed
       prev = li;
     }
     for (const li of rows.values()) li.remove();
-    if (!items.length) ul.innerHTML = '<li class="empty">Пока ни одного строителя. Начни чат с Claude — появится здесь.</li>';
+    if (!items.length) ul.innerHTML = `<li class="empty">${esc(tr('map.empty'))}</li>`;
 
     const waiting = items.filter((b) => b.state === 'waiting');
     const banner = $('#banner');
     banner.hidden = !waiting.length;
     if (waiting.length) {
       const first = waiting.find((b) => b.pos);
-      setHtml(banner, `<span class="pulse"></span><b>Ждёт тебя:</b> ${waiting.slice(0, 3).map((b) => `<span class="who"><button class="link" data-centre="${esc(b.id)}">${esc(b.name)}</button> <small>${b.waitKind === 'question' ? 'вопрос' : 'разрешение'}, ${fmtAgo(data.now - (b.waitSince ?? data.now))}</small></span>`).join('')}${waiting.length > 3 ? `<small>и ещё ${waiting.length - 3}</small>` : ''}${first ? `<button class="go" data-tp="${esc(first.id)}" title="${esc(first.name)}">Телепорт</button>` : ''}`);
+      setHtml(banner, `<span class="pulse"></span><b>${esc(tr('map.banner.waiting'))}</b> ${waiting.slice(0, 3).map((b) => `<span class="who"><button class="link" data-centre="${esc(b.id)}">${esc(b.name)}</button> <small>${esc(tr(b.waitKind === 'question' ? 'map.banner.question' : 'map.banner.permission', { ago: fmtAgo(data.now - (b.waitSince ?? data.now)) }))}</small></span>`).join('')}${waiting.length > 3 ? `<small>${esc(tr('map.banner.more', { count: waiting.length - 3 }))}</small>` : ''}${first ? `<button class="go" data-tp="${esc(first.id)}" title="${esc(first.name)}">${esc(tr('map.teleport'))}</button>` : ''}`);
     }
-    document.title = (waiting.length ? `(${waiting.length}) ждёт · ` : '') + 'Карта — ' + (data.city?.name ?? 'Promptenhorn');
+    const title = tr('map.title', { city: data.city?.name ?? 'Promptenhorn' });
+    document.title = waiting.length ? tr('map.titleWaiting', { count: waiting.length, title }) : title;
 
     const ps = data.players;
     if (!ps.includes(player)) player = ps[0] ?? '';
     const pl = $('#player');
-    if (ps.length > 1) setHtml(pl, `Игрок: <select id="psel">${ps.map((n) => `<option>${esc(n)}</option>`).join('')}</select>`);
-    else if (ps.length === 1) setHtml(pl, `Игрок: <b>${esc(ps[0])}</b>`);
-    else setHtml(pl, '<span class="hint">В игре никого нет — зайди на сервер, чтобы телепортироваться.</span>');
+    if (ps.length > 1) setHtml(pl, trh('map.player', { name: `<select id="psel" aria-label="${esc(tr('map.playerLabel'))}">${ps.map((n) => `<option>${esc(n)}</option>`).join('')}</select>` }));
+    else if (ps.length === 1) setHtml(pl, trh('map.player', { name: `<b>${esc(ps[0])}</b>` }));
+    else setHtml(pl, `<span class="hint">${esc(tr('map.noPlayers'))}</span>`);
     const sel = $('#psel');
     if (sel && sel.value !== player) sel.value = player;
 
     const st = $('#status');
-    if (!data.connected) st.textContent = 'Сервер Minecraft не подключён — карта по последнему состоянию';
-    else if (!data.city) st.textContent = 'Город ещё не основан: начни чат с Claude';
+    if (!data.connected) st.textContent = tr('map.status.offline');
+    else if (!data.city) st.textContent = tr('map.status.noCity');
     else {
       const done = data.plots.filter((p) => p.done && !['square', 'plaza', 'park'].includes(p.type)).length;
       const building = data.plots.filter((p) => !p.done).length;
-      st.textContent = `${data.districts.length} кварт. · ${done} зданий готово · ${building} строится` + (data.renovation ? ` · ремонт ${data.renovation.pct ?? 0}%` : '');
+      st.textContent = [tr('map.status.districts', { count: data.districts.length }), tr('map.status.done', { count: done }), tr('map.status.building', { count: building })].join(' · ') + (data.renovation ? ' · ' + tr('map.status.renovation', { pct: data.renovation.pct ?? 0 }) : '');
     }
   }
 
@@ -689,7 +700,7 @@ function client() {
       failures++;
       if (failures >= 2) {
         $('#offline').hidden = false;
-        $('#offline').textContent = 'Мост не отвечает: ' + err.message;
+        $('#offline').textContent = tr('map.bridgeOffline', { error: err.message });
       }
     } finally {
       setTimeout(poll, document.hidden ? 5000 : 1000);
@@ -700,7 +711,7 @@ function client() {
   async function teleport(body, what) {
     try {
       const r = await api('/api/map/tp', { ...body, player });
-      toast((r.mode === 'follow' ? 'Следишь за ' : 'Телепорт к ') + r.target + ' → ' + r.player);
+      toast(tr(r.mode === 'follow' ? 'map.toast.follow' : 'map.toast.teleport', { target: r.target, player: r.player }));
     } catch (err) {
       toast(err.message);
     }
@@ -765,14 +776,14 @@ function client() {
     let html;
     if (h.kind === 'builder') {
       const b = h.item;
-      html = `<b>${esc(b.name)}</b><span class="st" style="color:${STATES[b.state][1]}">● ${STATES[b.state][0]}</span><br>
-        Квартал: ${esc(b.district)}<br>Стройка: ${siteText(b)}${b.home ? `<br>Свой дом: ${esc(b.home.label)} · ${b.home.pct}%` : ''}<br>
-        Сейчас: ${esc(b.activity)}<br><small>последнее событие ${fmtAgo(data.now - b.lastEvent)} назад${b.model ? ' · ' + esc(b.model) : ''}</small>`;
+      html = `<b>${esc(b.name)}</b><span class="st" style="color:${STATES[b.state][1]}">● ${esc(STATES[b.state][0])}</span><br>
+        ${trh('map.tip.district', { name: esc(b.district) })}<br>${trh('map.tip.site', { site: siteText(b) })}${b.home ? `<br>${trh('map.tip.home', { label: esc(b.home.label), pct: b.home.pct })}` : ''}<br>
+        ${trh('map.tip.now', { activity: esc(b.activity) })}<br><small>${trh('map.tip.lastEvent', { ago: esc(fmtAgo(data.now - b.lastEvent)) })}${b.model ? ' · ' + esc(b.model) : ''}</small>`;
     } else {
       const p = h.item;
       const d = data.districts.find((x) => x.key === p.district);
-      const state = p.renovating != null ? `ремонт ${p.renovating}%` : p.done ? (p.outdated ? 'готово, ждёт ремонта' : 'готово') : `строится ${p.pct}%`;
-      html = `<b>${esc(p.label)}</b><br>${d ? 'Квартал: ' + esc(d.name) + '<br>' : ''}${esc(state)}${p.stage && !['square', 'plaza', 'park'].includes(p.type) && !p.public ? ` · этап ${p.stage}` : ''}${p.builder ? '<br>Строит: ' + esc(p.builder) : ''}<br><small>клик — телепорт к фасаду</small>`;
+      const state = p.renovating != null ? tr('map.plot.renovating', { pct: p.renovating }) : p.done ? tr(p.outdated ? 'map.plot.outdated' : 'map.plot.done') : tr('map.plot.building', { pct: p.pct }) + (p.vpct > p.pct ? ' · ' + tr('map.plot.offline', { pct: p.vpct }) : '');
+      html = `<b>${esc(p.label)}</b><br>${d ? trh('map.tip.district', { name: esc(d.name) }) + '<br>' : ''}${esc(state)}${p.stage && !['square', 'plaza', 'park'].includes(p.type) && !p.public ? ' · ' + esc(tr('map.plot.stage', { stage: p.stage })) : ''}${p.builder ? '<br>' + trh('map.plot.builder', { name: esc(p.builder) }) : ''}<br><small>${esc(tr('map.plot.click'))}</small>`;
     }
     tip.innerHTML = html;
     tip.hidden = false;
@@ -895,12 +906,18 @@ function client() {
   poll();
 }
 
-export const mapPage = () => `<!doctype html>
-<html lang="ru">
+const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+// JSON inside <script>: no "</script>" or "<!--" can end the element early.
+const scriptJson = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
+
+export const mapPage = (lang) => {
+  const h = (key, params) => escHtml(t(key, params, lang));
+  return `<!doctype html>
+<html lang="${htmlLang(lang)}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Карта — Promptenhorn</title>
+<title>${h('map.title', { city: 'Promptenhorn' })}</title>
 <style>
   :root { --bg:#f6f4ef; --card:#fff; --ink:#1f2328; --muted:#6b7280; --line:#e5e1d8; --accent:#c8102e; --ok:#1a7f37; --chip:#f0ede6;
     --map-ground:#e4ecd9; --map-street:#cdc8bd; --map-rural:#d6c7a3; --map-halo:rgba(255,255,255,.9); --map-gold:#9a6b00; color-scheme: light; }
@@ -981,27 +998,27 @@ export const mapPage = () => `<!doctype html>
 </head>
 <body>
 <header>
-  <h1>Promptenhorn <span>⛰</span> карта</h1>
-  <div id="status">Загрузка…</div>
-  <a href="/">Настройки</a>
+  <h1>Promptenhorn <span>⛰</span> ${h('map.heading')}</h1>
+  <div id="status">${h('map.loading')}</div>
+  <a href="/">${h('map.settings')}</a>
 </header>
 <div class="wrap">
   <div class="stage">
-    <canvas id="map" aria-label="Карта города"></canvas>
+    <canvas id="map" role="img" aria-label="${h('map.canvas')}"></canvas>
     <div id="banner" hidden></div>
     <div class="ctl">
-      <button id="zin" title="Приблизить (+)">+</button>
-      <button id="zout" title="Отдалить (−)">−</button>
-      <button id="fit" title="Весь город (0)">⤢</button>
+      <button id="zin" title="${h('map.zoomIn')}" aria-label="${h('map.zoomIn')}">+</button>
+      <button id="zout" title="${h('map.zoomOut')}" aria-label="${h('map.zoomOut')}">−</button>
+      <button id="fit" title="${h('map.fit')}" aria-label="${h('map.fit')}">⤢</button>
     </div>
     <div id="legend">
-      <button id="legend-toggle">Легенда</button>
+      <button id="legend-toggle">${h('map.legend')}</button>
       <ul id="legend-types"></ul>
       <div class="extra">
-        <span><i class="sw build"></i>строится (заливка = %)</span>
-        <span><i class="sw ren"></i>ремонт</span>
-        <span><i class="sw old"></i>ждёт ремонта</span>
-        <span><i class="sw pub"></i>для квартала</span>
+        <span><i class="sw build"></i>${h('map.legend.building')}</span>
+        <span><i class="sw ren"></i>${h('map.legend.renovating')}</span>
+        <span><i class="sw old"></i>${h('map.legend.outdated')}</span>
+        <span><i class="sw pub"></i>${h('map.legend.public')}</span>
       </div>
       <ul id="legend-states"></ul>
     </div>
@@ -1009,13 +1026,15 @@ export const mapPage = () => `<!doctype html>
     <div id="offline" hidden></div>
   </div>
   <aside>
-    <h2>Строители <span id="count"></span></h2>
+    <h2>${h('map.builders')} <span id="count"></span></h2>
     <div id="player"></div>
     <ul id="builders"></ul>
   </aside>
 </div>
 <div class="toast" id="toast"></div>
+<script>const L = ${scriptJson(strings(['map.', 'building.'], lang))}; const LANG = ${scriptJson(htmlLang(lang))};</script>
 <script>(${client.toString()})();</script>
 </body>
 </html>
 `;
+};

@@ -20,12 +20,15 @@ import life from './life.mjs';
 import town from './town.mjs';
 import clocks from './clocks.mjs';
 import holidays from './holidays.mjs';
+import citylife, { LIFE_PARAMS } from './citylife.mjs';
+import landscape from './landscape.mjs';
+import chatter, { CHATTER_PARAMS } from './chatter.mjs';
 
 const renovation = {
   id: 'renovation',
-  group: 'Город',
-  label: 'Ремонт вместо сноса',
-  description: 'Когда меняются чертежи, готовые дома чинятся по разнице: свободные строители квартала меняют только то, что изменилось.',
+  group: 'city', // shown via feature.group.city / feature.renovation.label / .desc (locales)
+  label: 'Renovation instead of demolition',
+  description: "When the blueprints change, finished houses are repaired by the difference: the district's free builders change only what changed.",
   presets: ['basic'],
   // The work itself lives in renovate.mjs (core); this entry is only the switch. Half-built houses are
   // always migrated by diff, even with this off.
@@ -33,22 +36,76 @@ const renovation = {
 
 const economy = {
   id: 'economy',
-  group: 'Город',
-  label: 'Экономика чатов',
-  description: 'Короткий чат ставит скамейку, дерево или фонтан на площади; свой дом — после 20 действий, и он растёт этапами. Длинные чаты строят общественное: церковь, башню, парк, потом лес и смотровую на вершине.',
+  group: 'city',
+  label: 'Chat economy',
+  description: 'A short chat places a bench, a tree or a fountain on the square; its own house comes after 20 actions and grows in stages. Long chats build public works: a church, a tower, a park, then a forest and a lookout on the summit.',
   presets: ['basic'],
   // Lives in the bridge core (sites: forms, stages, public works). Off = one house after another, as before.
 };
 
+const smoothBuilders = {
+  id: 'smoothBuilders',
+  group: 'builders',
+  label: 'Smooth motion',
+  description: 'Fast mode: mannequin builders glide between work spots (they ride an invisible display the client interpolates) and turn to the next block, instead of jumping.',
+  presets: [],
+  // Lives in bridge/builders/mannequin.mjs; this entry is only the switch.
+};
+
+// Terrain-adaptive town (bridge/terrain.mjs, bridge/infra.mjs, docs/terrain-adaptive-design.md); these
+// entries are only the switches. New plots only: existing plots are never rebuilt.
+const adaptiveTerrain = {
+  id: 'adaptive-terrain',
+  group: 'city',
+  label: 'Town follows the terrain',
+  description: 'New plots climb the hillside in terraces with stone retaining walls instead of flattening it, never build on water or cliffs, and are linked by stair lanes; viewpoints appear at cliff edges. A new city is founded in a valley with a lake or river and hills around.',
+  presets: ['basic'],
+};
+const waterfront = {
+  id: 'waterfront',
+  group: 'city',
+  label: 'Lake front',
+  description: 'Where the town meets the water: quays with railings, lamps and benches, jetties with boats, a promenade or a lido with parasols, and a harbour with a breakwater and a lighthouse.',
+  presets: ['basic'],
+};
+const riverBridges = {
+  id: 'river-bridges',
+  group: 'city',
+  label: 'Bridges over rivers',
+  description: 'A district may grow across a river: a stone arch bridge, a covered wooden bridge with flower boxes and a water tower, or a viaduct over a gorge.',
+  presets: ['basic'],
+};
+const shoreRenovation = {
+  id: 'shore-renovation',
+  group: 'city',
+  label: 'Quays for existing plots',
+  description: 'Additive renovation of the existing town: grass slopes that run into the water get a stone quay with steps, railings, lamps and benches, open water a jetty, the best bay a harbour. Nothing is demolished.',
+  presets: ['basic'],
+};
+
 // Order = order on the settings page, roughly from most to least noticeable.
 export const FEATURES = [
-  ...callout, ...status, ...work, apprentices, ...night, advancements, ...chronicle, economy, renovation, ...life, ...town, ...clocks, holidays,
+  ...callout, ...status, ...work, apprentices, smoothBuilders, ...night, advancements, ...chronicle, economy, renovation, adaptiveTerrain, waterfront, riverBridges, shoreRenovation, ...life, ...town, ...clocks, holidays,
+  ...citylife, ...landscape, chatter,
 ];
+
+/** Parameters declared by feature modules (the settings page shows them with the bridge's own). */
+export const FEATURE_PARAMS = [...LIFE_PARAMS, ...CHATTER_PARAMS];
 
 // Features verified end-to-end on the test server. Everything else is marked experimental: it stays out
 // of every preset (so it cannot change a live city by surprise) until it is tested; users can still
 // switch it on by hand on the settings page.
-export const TESTED = new Set(['renovation']);
+export const TESTED = new Set([
+  'renovation',
+  // Verified on the test server by the life agent, 25.10.2026 (docs/roadmap.md, "Verification round").
+  'callout', 'idleCallout', 'status', 'toolInHand', 'tests', 'commits', 'push', 'pr', 'apprentices',
+  'realTime', 'windows', 'chimney', 'advancements', 'chronicle', 'economy',
+  'allay', 'compact', 'storm', 'planMode', 'professions', 'scaffolding', 'alphorn', 'quirks',
+  'townRank', 'francs', 'matterhorn', 'clockBells', 'sbbClock', 'holidays',
+  'residents', 'seated', 'builderLife', 'animals', 'cableCar', 'train', 'paragliders', 'boats', 'chatter',
+  // Verified on the test server by the terrain agent, 25.10.2026 (docs/terrain-adaptive-design.md, "Implementation").
+  'adaptive-terrain', 'waterfront', 'river-bridges', 'shore-renovation',
+]);
 for (const f of FEATURES) if (!TESTED.has(f.id) && !f.optIn) f.experimental = true;
 
 const ids = new Set();

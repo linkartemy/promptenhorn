@@ -3,14 +3,16 @@
 // 16 (residents by house type), 17 (scaffolding), 27 (alphorn), 30 (quirks: TNT for rm -rf, helmet by
 // model, dropping the tool on Ctrl+C).
 import { fxTagsSnbt } from '../fx.mjs';
+import { t } from '../i18n.mjs';
+import { groundSweep } from './markers.mjs';
 
 let fxSeq = 0;
 
 const allay = {
   id: 'allay',
-  group: 'Работа Claude',
-  label: 'Веб-поиск = почтовый аллей',
-  description: 'WebSearch/WebFetch: аллей вылетает от строителя за «письмом» и через 4 секунды возвращается. Не чаще раза в 10 секунд.',
+  group: 'claude',
+  label: 'Web search = mail allay',
+  description: 'WebSearch/WebFetch: an allay flies off from the builder to fetch a "letter" and comes back after 4 seconds. At most once every 10 seconds.',
   presets: [],
   onEvent(ctx, s, ev) {
     if (ev.kind !== 'PostToolUse' || !['WebSearch', 'WebFetch'].includes(ev.tool) || !s.at) return;
@@ -36,9 +38,9 @@ const allay = {
 
 const compact = {
   id: 'compact',
-  group: 'Работа Claude',
-  label: 'Компакция = перекур',
-  description: 'Чат сжимает память: строитель присаживается с кружкой на несколько секунд, а рядом стоящие видят «чат сжал память».',
+  group: 'claude',
+  label: 'Compaction = coffee break',
+  description: 'The chat compacts its memory: the builder sits down with a mug for a few seconds, and people nearby see "chat compacted its memory".',
   presets: [],
   handPriority: 20,
   handItem(ctx, s) {
@@ -56,7 +58,7 @@ const compact = {
     if (on) {
       await ctx.cmd(`data merge entity ${sel} {pose:"crouching"}`);
       await ctx.refreshHand(s);
-      await ctx.cmd(`execute at ${sel} run title @a[distance=..48] actionbar {text:"☕ ${ctx.cleanText(s.name, 24).replace(/"/g, "'")}: чат сжал память, перекур",color:"aqua"}`);
+      await ctx.cmd(`execute at ${sel} run title @a[distance=..48] actionbar ${ctx.textJson(t('life.compact.actionbar', { name: ctx.cleanText(s.name, 24) }), 'aqua')}`);
     } else {
       s.pose = null; // the build loop puts the right pose back
       await ctx.refreshHand(s);
@@ -88,9 +90,9 @@ function strike(ctx) {
 let stormUntil = 0;
 const storm = {
   id: 'storm',
-  group: 'Работа Claude',
-  label: 'Лимит API = гроза в горах',
-  description: 'Чат упёрся в rate limit или перегрузку: на минуту гроза, молнии бьют только по дальним вершинам. Не чаще раза в 5 минут.',
+  group: 'claude',
+  label: 'API limit = mountain storm',
+  description: 'A chat hit a rate limit or an overload: a thunderstorm for a minute, lightning strikes only the far peaks. At most once every 5 minutes.',
   presets: [],
   onEvent(ctx, s, ev) {
     if (ev.kind !== 'StopFailure' || !['rate_limit', 'overloaded'].includes(ev.error)) return;
@@ -112,9 +114,9 @@ function outline(ctx, plot) {
 
 const planMode = {
   id: 'planMode',
-  group: 'Работа Claude',
-  label: 'Plan mode = архитектор',
-  description: 'В режиме планирования строитель держит карту, а контур будущего дома мерцает искрами по углам. Стройка начинается после выхода из plan.',
+  group: 'claude',
+  label: 'Plan mode = architect',
+  description: 'In plan mode the builder holds a map, and the outline of the future house sparkles at its corners. Building starts after leaving plan mode.',
   presets: [],
   handPriority: 30,
   handItem(ctx, s) {
@@ -137,13 +139,13 @@ const planMode = {
   },
 };
 
-const PROFESSION = { farmhouse: 'farmer', church: 'cleric', cafe: 'butcher', hotel: 'librarian', clocktower: 'toolsmith', hut: 'shepherd', apartment: 'cartographer', modern: 'librarian', townhouse: 'mason', chalet: 'farmer' };
+export const PROFESSION = { farmhouse: 'farmer', church: 'cleric', cafe: 'butcher', hotel: 'librarian', clocktower: 'toolsmith', hut: 'shepherd', apartment: 'cartographer', modern: 'librarian', townhouse: 'mason', chalet: 'farmer' };
 
 const professions = {
   id: 'professions',
-  group: 'Город',
-  label: 'Жители по профессии дома',
-  description: 'В ферму въезжает фермер, в церковь — священник, в кафе — мясник, в отель — библиотекарь. У фермы корова и коза; изредка слышен колокольчик.',
+  group: 'city',
+  label: 'Villagers by house type',
+  description: 'A farmer moves into the farm, a cleric into the church, a butcher into the café, a librarian into the hotel. The farm gets a cow and a goat; now and then a cowbell rings.',
   presets: ['basic'],
   villagerProfession(ctx, plot) {
     return PROFESSION[plot.type] ?? null;
@@ -158,7 +160,7 @@ const professions = {
     let n = 0;
     for (const [x, z] of cells.slice(0, 2)) {
       const kind = n === 0 ? 'cow' : 'goat';
-      await ctx.cmd(`summon minecraft:${kind} ${plot.x0 + x + 0.5} ${plot.y + 1} ${plot.z0 + z + 0.5} {Tags:["alps","alps_animal"],NoAI:1b,PersistenceRequired:1b,Rotation:[${n * 90}f,0f]}`);
+      await ctx.cmd(`summon minecraft:${kind} ${plot.x0 + x + 0.5} ${plot.y + 1} ${plot.z0 + z + 0.5} {Tags:["alps","alps_animal","alps_grounded"],NoAI:1b,PersistenceRequired:1b,Rotation:[${n * 90}f,0f]}`);
       n++;
     }
     d.animals = (d.animals ?? 0) + n;
@@ -166,6 +168,11 @@ const professions = {
     ctx.save();
   },
   onTick(ctx, now) {
+    if (now > (professions.groundAt ?? 0)) {
+      professions.groundAt = now + 10000;
+      // Farm animals of older versions have no alps_grounded tag yet: give it to them, then keep them on the ground.
+      ctx.fx.push(['tag @e[tag=alps_animal,tag=!alps_grounded] add alps_grounded', ...groundSweep()], { key: 'ground' });
+    }
     if (now < (professions.next ?? 0)) return;
     professions.next = now + 60000 + Math.random() * 60000;
     const farms = Object.values(ctx.state.plots).filter((p) => p.animals);
@@ -176,6 +183,50 @@ const professions = {
 };
 
 const SCAFFOLD = 'minecraft:scaffolding[bottom=false,distance=0,waterlogged=false]';
+// What does not count as the house body when looking for its corners: garden, lamps, fences, flags.
+const NOT_BODY = /fence|_wall\b|_wall\[|lantern|torch|leaves|flower|tulip|poppy|daisy|cornflower|allium|bluet|orchid|dandelion|lily|fern|bush|grass|sapling|banner|chain|_bars|lightning_rod|campfire|pot|carpet|button|sign|azalea|bell|slab\[type=bottom/;
+
+/**
+ * Scaffolding columns for a plot-local build list: one column just outside each corner of the house
+ * body (cells with at least four solid storeys of wall), as high as the walls next to it. The bounding
+ * box of everything above the ground floor (plotmeta's `struct`) also covers lamps, fences and flag
+ * poles, which pushed the corners off the lot, so most houses got no scaffolding at all.
+ */
+export function scaffoldColumns(local) {
+  const has = new Set(local.map((b) => `${b.x},${b.y},${b.z}`));
+  const tall = new Map(); // "x,z" -> [count of body blocks, top y]
+  for (const b of local) {
+    if (b.y < 1 || NOT_BODY.test(b.block)) continue;
+    const k = `${b.x},${b.z}`;
+    const [n, top] = tall.get(k) ?? [0, 0];
+    tall.set(k, [n + 1, Math.max(top, b.y)]);
+  }
+  const body = [...tall].filter(([, [n]]) => n >= 4).map(([k, [, top]]) => [...k.split(',').map(Number), top]);
+  if (!body.length) return [];
+  const x1 = Math.min(...body.map((c) => c[0]));
+  const x2 = Math.max(...body.map((c) => c[0]));
+  const z1 = Math.min(...body.map((c) => c[1]));
+  const z2 = Math.max(...body.map((c) => c[1]));
+  const heightNear = (x, z) => Math.max(0, ...body.filter((c) => Math.abs(c[0] - x) <= 2 && Math.abs(c[1] - z) <= 2).map((c) => c[2]));
+  const out = [];
+  for (const [cx, cz, sx, sz] of [[x1, z1, -1, -1], [x2, z1, 1, -1], [x1, z2, -1, 1], [x2, z2, 1, 1]]) {
+    // Diagonally outside the corner, else beside it along either wall.
+    for (const [x, z] of [[cx + sx, cz + sz], [cx + sx, cz], [cx, cz + sz]]) {
+      if (x < 2 || x > 18 || z < 2 || z > 18 || out.some((c) => Math.abs(c.x - x) + Math.abs(c.z - z) < 3)) continue;
+      const wall = heightNear(cx, cz);
+      let top = 0;
+      for (let y = 1; y <= wall; y++) {
+        if (has.has(`${x},${y},${z}`)) break;
+        top = y;
+      }
+      if (top >= 3) {
+        out.push({ x, z, top: Math.min(top, wall - 1, 30) });
+        break;
+      }
+    }
+  }
+  return out.filter((c) => c.top >= 3);
+}
 
 async function scaffoldDown(ctx, plot) {
   for (const c of plot.scaffold?.cols ?? []) await ctx.cmd(`fill ${c.x} ${plot.y + 1} ${c.z} ${c.x} ${plot.y + c.top} ${c.z} air replace minecraft:scaffolding`);
@@ -183,11 +234,12 @@ async function scaffoldDown(ctx, plot) {
   ctx.save();
 }
 
+const scaffoldCache = new Map();
 const scaffolding = {
   id: 'scaffolding',
-  group: 'Город',
-  label: 'Строительные леса',
-  description: 'Пока дом строится, по его углам растут леса; на финише их снимают вместе с фейерверком.',
+  group: 'city',
+  label: 'Scaffolding',
+  description: 'While a house is being built, scaffolding rises at its corners; it comes down with the fireworks at the end.',
   presets: [],
   always: ['onFinish'],
   async onWork(ctx, s, site) {
@@ -196,12 +248,16 @@ const scaffolding = {
     const r = ctx.rt(s);
     if (Date.now() < (r.scaffoldNext ?? 0)) return;
     r.scaffoldNext = Date.now() + 1000;
-    const meta = ctx.meta(plot);
-    if (!meta.scaffold.length) return;
-    const { list } = ctx.buildList(plot);
+    const { list, local, hash } = ctx.buildList(plot);
+    if (!scaffoldCache.has(hash)) {
+      if (scaffoldCache.size > 200) scaffoldCache.clear();
+      scaffoldCache.set(hash, scaffoldColumns(local));
+    }
+    const cols = scaffoldCache.get(hash);
+    if (!cols.length) return;
     const current = plot.placed ? list[Math.min(plot.placed, list.length) - 1].y - plot.y + 1 : 1;
-    plot.scaffold ??= { h: 0, cols: meta.scaffold.map((c) => ({ x: plot.x0 + c.x, z: plot.z0 + c.z, top: c.top })) };
-    const target = Math.min(current, Math.max(...meta.scaffold.map((c) => c.top)));
+    plot.scaffold ??= { h: 0, cols: cols.map((c) => ({ x: plot.x0 + c.x, z: plot.z0 + c.z, top: c.top })) };
+    const target = Math.min(current, Math.max(...plot.scaffold.cols.map((c) => c.top)));
     if (plot.scaffold.h >= target) return;
     const y = ++plot.scaffold.h;
     for (const c of plot.scaffold.cols) if (y <= c.top) await ctx.cmd(`execute if block ${c.x} ${plot.y + y} ${c.z} minecraft:air run setblock ${c.x} ${plot.y + y} ${c.z} ${SCAFFOLD}`);
@@ -220,9 +276,9 @@ const scaffolding = {
 
 const alphorn = {
   id: 'alphorn',
-  group: 'Пасхалки',
-  label: 'Альпхорн на финише',
-  description: 'Когда дом достроен, по долине раскатывается низкий звук альпийского рога.',
+  group: 'extras',
+  label: 'Alphorn at the finish',
+  description: 'When a house is finished, the low sound of an alphorn rolls through the valley.',
   presets: ['basic'],
   onFinish(ctx, s, plot, { top }) {
     const [x, z] = [plot.x0 + 10, plot.z0 + 10];
@@ -235,9 +291,9 @@ const HELMETS = { opus: 'minecraft:golden_helmet', sonnet: 'minecraft:iron_helme
 
 const quirks = {
   id: 'quirks',
-  group: 'Пасхалки',
-  label: 'Мелочи',
-  description: 'rm -rf — строитель секунду держит динамит (без взрыва); каска по модели (Opus — золотая, Haiku — кожаная); Ctrl+C — роняет инструмент.',
+  group: 'extras',
+  label: 'Little things',
+  description: 'rm -rf: the builder holds dynamite for a second (no explosion); the hard hat depends on the model (Opus: gold, Haiku: leather); Ctrl+C: drops the tool.',
   presets: [],
   handPriority: 10,
   handItem(ctx, s) {

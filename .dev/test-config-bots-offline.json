@@ -1,0 +1,18 @@
+{
+  "port": 7791,
+  "serverDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/offline-proxy",
+  "stateFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-state-bots-offline.json",
+  "heartbeatFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-heartbeat-bots-offline",
+  "archiveDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-archive-bots",
+  "blocksPerSecond": 3,
+  "searchOrigin": [
+    44000,
+    0
+  ],
+  "preset": "minimal",
+  "builderMode": "offline",
+  "offlineCatchUp": "instant",
+  "offlineTimelapseSeconds": 60,
+  "idleAfterMinutes": 30,
+  "resetForceloadsOnStart": false
+}

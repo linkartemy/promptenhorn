@@ -5,10 +5,10 @@
       "id": "minecraft:stone_brick_wall"
     },
     "title": {
-      "text": "Городской рабочий"
+      "text": "Public works"
     },
     "description": {
-      "text": "Чат начал строить для квартала"
+      "text": "A chat started building for the district"
     },
     "frame": "task",
     "show_toast": true,

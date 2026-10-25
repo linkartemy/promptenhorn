@@ -4,6 +4,7 @@
 // first, then structure top-down, so nothing attached pops off and drops), blocks that changed or are
 // new get placed in the normal build order (structure bottom-up, decorations last), and everything that
 // stayed the same is never touched.
+import { t, tParts } from './i18n.mjs';
 
 const key = (b) => `${b.x},${b.y},${b.z}`;
 
@@ -188,8 +189,8 @@ export class Renovator {
     const left = this.pending().filter((p) => (this.state.plots[p.key].district ?? null) === (plot.district ?? null));
     if (!left.length && job.kind === 'gen') {
       const [x, z] = [plot.x0 + 10, plot.z0 + 10];
-      if (district) await this.d.announce([{ text: 'Квартал ' }, { text: district.name, color: 'yellow' }, { text: ' отремонтирован' }], x, plot.y + 2, z);
-      else if (plot.type === 'square') await this.d.announce([{ text: 'Главная площадь отремонтирована' }], x, plot.y + 2, z);
+      if (district) await this.d.announce(tParts('bridge.renovation.district', { name: { text: district.name, color: 'yellow' } }), x, plot.y + 2, z);
+      else if (plot.type === 'square') await this.d.announce([{ text: t('bridge.renovation.square') }], x, plot.y + 2, z);
     }
   }
 
@@ -210,7 +211,7 @@ export class Renovator {
       return;
     }
     await cmd(`scoreboard players set alps_renov alps ${Math.floor(frac * 100)}`);
-    await cmd(`scoreboard players display name alps_renov alps ${textJson('Ремонт', 'aqua')}`);
+    await cmd(`scoreboard players display name alps_renov alps ${textJson(t('bridge.renovation.sidebar'), 'aqua')}`);
     await cmd(`scoreboard players display numberformat alps_renov alps fixed ${textJson(label, 'aqua')}`);
   }
 

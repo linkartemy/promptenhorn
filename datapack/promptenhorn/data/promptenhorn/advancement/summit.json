@@ -5,10 +5,10 @@
       "id": "minecraft:spruce_fence"
     },
     "title": {
-      "text": "На вершине"
+      "text": "On the summit"
     },
     "description": {
-      "text": "На ближайшей вершине поставлен крест"
+      "text": "A cross stands on the nearest summit"
     },
     "frame": "goal",
     "show_toast": true,

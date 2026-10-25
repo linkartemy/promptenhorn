@@ -65,9 +65,9 @@ let next = 0;
 let fireworksDay = null;
 const holidays = {
   id: 'holidays',
-  group: 'Пасхалки',
-  label: '1 августа и Рождество',
-  description: '1 августа — флаги на площадях, костры на вершинах и салют в 21:00; 24–26 декабря — дождь в долине и снег в горах.',
+  group: 'extras',
+  label: '1 August and Christmas',
+  description: '1 August: flags on the squares, bonfires on the peaks and fireworks at 21:00; 24–26 December: rain in the valley and snow in the mountains.',
   presets: [],
   always: ['onTick'],
   async onTick(ctx, now) {
@@ -75,7 +75,7 @@ const holidays = {
     next = now + 60000;
     if (ctx.state.holidaySweep) {
       if (Date.now() > ctx.state.holidaySweep) delete ctx.state.holidaySweep;
-      if (!ctx.state.holiday) ctx.fx.push('kill @e[type=minecraft:item_display,tag=alps_holiday]', { key: 'holiday:sweep' });
+      if (!ctx.state.holiday?.flags) ctx.fx.push('kill @e[type=minecraft:item_display,tag=alps_holiday]', { key: 'holiday:sweep' });
     }
     if (!ctx.on('holidays')) {
       if (ctx.state.holiday) await stop(ctx);

@@ -3,13 +3,37 @@
 // re-read when config.json changes on disk (configure.mjs edits the file), so changes apply live.
 import fs from 'node:fs';
 import { settingsPage } from './settings-page.mjs';
+import { t, tOr, setLanguage, language, reloadCatalogs, LANGUAGES, DEFAULT_LANGUAGE } from './i18n.mjs';
 
-export const PRESETS = {
-  minimal: { label: 'Минимум', description: 'Только строители и дома, как в первой версии.' },
-  basic: { label: 'Базовый', description: 'Проверенные функции, которые не шумят. Пока это ремонт вместо сноса; новое добавляется по мере проверки.' },
-  max: { label: 'Максимум', description: 'Все проверенные функции. Экспериментальные и опции приватности включаются только вручную.' },
-};
+// Labels are looked up on every read, so they follow the current language.
+const preset = (id) => ({
+  get label() {
+    return t(`preset.${id}.label`);
+  },
+  get description() {
+    return t(`preset.${id}.desc`);
+  },
+});
+export const PRESETS = { minimal: preset('minimal'), basic: preset('basic'), max: preset('max') };
 export const DEFAULT_PRESET = 'basic';
+
+// Feature groups: modules may still name a group in Russian (older inline metadata); new code uses the
+// slug. Shown through `feature.group.<slug>`.
+const GROUP_SLUGS = { 'Работа Claude': 'claude', 'Строители': 'builders', 'Город': 'city', 'Прогресс': 'progress', 'Приватность': 'privacy', 'Пасхалки': 'extras', 'Информация': 'info' };
+export const groupSlug = (group) => GROUP_SLUGS[group] ?? group;
+/** Localized texts of a feature (catalog first, then the module's inline metadata). */
+export const featureText = (f) => ({
+  label: tOr(`feature.${f.id}.label`, f.label ?? f.id),
+  description: tOr(`feature.${f.id}.desc`, f.description ?? ''),
+  group: tOr(`feature.group.${groupSlug(f.group)}`, f.group),
+});
+/** Localized texts of a numeric / choice parameter. */
+export const paramText = (p) => ({
+  label: tOr(`param.${p.key}.label`, p.label ?? p.key),
+  description: tOr(`param.${p.key}.desc`, p.description ?? ''),
+  ...(p.options ? { options: p.options.map(([v, l]) => [v, tOr(`param.${p.key}.option.${v}`, l)]) } : {}),
+});
+export const validLanguage = (code) => Object.hasOwn(LANGUAGES, code);
 
 /** Whether `feature` is on in `preset` before overrides. Opt-in (privacy) features are never on by preset. */
 export function inPreset(feature, preset) {
@@ -41,11 +65,12 @@ function setPath(obj, key, value) {
 }
 
 /** Writes preset/features (and changed parameters) into the config file, keeping every other key. */
-export function writeConfigFile(file, { preset, features, params }) {
+export function writeConfigFile(file, { preset, features, params, language: lang }) {
   const cfg = readConfigFile(file);
-  cfg.preset = preset;
+  if (lang !== undefined) cfg.language = lang;
+  if (preset !== undefined) cfg.preset = preset;
   if (features && Object.keys(features).length) cfg.features = features;
-  else delete cfg.features;
+  else if (features !== undefined) delete cfg.features;
   for (const [k, v] of Object.entries(params ?? {})) setPath(cfg, k, v);
   const text = JSON.stringify(cfg, null, 2) + '\n';
   fs.writeFileSync(file + '.tmp', text);
@@ -59,12 +84,14 @@ export class Settings {
    * @param {string} o.file config.json path
    * @param {{id,label,description,group,presets,optIn}[]} o.registry
    * @param {(changes: {id: string, on: boolean}[]) => void} o.onChange
+   * @param {(lang: string) => void} [o.onLanguage] after the language switched (in-game texts to refresh)
    */
-  constructor({ file, registry, log, onChange, initial, params = [], config = {}, routes = {} }) {
+  constructor({ file, registry, log, onChange, onLanguage, initial, params = [], config = {}, routes = {} }) {
     this.file = file;
     this.registry = registry;
     this.log = log;
     this.onChange = onChange;
+    this.onLanguage = onLanguage ?? (() => {});
     this.params = params; // [{ key, label, description, min, max, step } | { key, label, options: [[value, label]] }]
     this.config = config; // the live config object: parameters are applied to it directly
     this.routes = routes; // extra API routes ('GET /api/x': (body) => result)
@@ -74,6 +101,8 @@ export class Settings {
   }
 
   #load(cfg) {
+    this.language = setLanguage(cfg.language ?? DEFAULT_LANGUAGE);
+    this.config.language = this.language;
     this.preset = PRESETS[cfg.preset] ? cfg.preset : DEFAULT_PRESET;
     this.overrides = {};
     for (const [id, v] of Object.entries(cfg.features ?? {})) if (this.ids.has(id) && typeof v === 'boolean') this.overrides[id] = v;
@@ -125,8 +154,32 @@ export class Settings {
     return out;
   }
 
-  /** Applies {preset} (clears overrides: a preset button means "exactly this set") and/or {features: {id: bool|null}} and/or {params}. */
-  apply({ preset, features, params } = {}) {
+  /** Switches the language (saved to the config file when `persist`); returns true when it changed. */
+  #setLanguage(code, persist) {
+    if (!validLanguage(code)) throw new Error(`unknown language ${code}: expected one of ${Object.keys(LANGUAGES).join(', ')}`);
+    const before = this.language;
+    this.language = setLanguage(code);
+    this.config.language = this.language;
+    if (persist) {
+      try {
+        this.lastText = writeConfigFile(this.file, { language: this.language });
+      } catch (err) {
+        this.log(`could not save settings to ${this.file}: ${err.message}`);
+      }
+    }
+    if (this.language === before) return false;
+    this.log(`Language: ${this.language}`);
+    try {
+      this.onLanguage(this.language);
+    } catch (err) {
+      this.log(`language change: ${err.stack ?? err.message}`);
+    }
+    return true;
+  }
+
+  /** Applies {language}, {preset} (clears overrides: a preset button means "exactly this set") and/or {features: {id: bool|null}} and/or {params}. */
+  apply({ preset, features, params, language: lang } = {}) {
+    if (lang !== undefined) this.#setLanguage(lang, true);
     const changedParams = this.#params(params);
     if (Object.keys(changedParams).length) {
       try {
@@ -159,6 +212,10 @@ export class Settings {
         if (text === this.lastText) return;
         const cfg = JSON.parse(text);
         this.lastText = text;
+        reloadCatalogs(); // edited locale files are picked up together with the settings
+        const lang = validLanguage(cfg.language) ? cfg.language : DEFAULT_LANGUAGE;
+        if (cfg.language !== undefined && !validLanguage(cfg.language)) this.log(`config: unknown language ${cfg.language}, using ${lang}`);
+        if (lang !== this.language) this.#setLanguage(lang, false);
         for (const p of this.params) {
           const v = getPath(cfg, p.key);
           if (v !== undefined && v !== getPath(this.config, p.key)) {
@@ -173,7 +230,7 @@ export class Settings {
         this.overrides = {};
         for (const [id, v] of Object.entries(cfg.features ?? {})) if (this.ids.has(id) && typeof v === 'boolean') this.overrides[id] = v;
         const changes = this.#commit(false);
-        this.log(`Settings reloaded from ${this.file}: preset ${this.preset}${changes.length ? `, changed ${changes.map((c) => `${c.id}=${c.on ? 'on' : 'off'}`).join(' ')}` : ''}`);
+        this.log(`Settings reloaded from ${this.file}: language ${this.language}, preset ${this.preset}${changes.length ? `, changed ${changes.map((c) => `${c.id}=${c.on ? 'on' : 'off'}`).join(' ')}` : ''}`);
       } catch (err) {
         if (text !== undefined) this.log(`config file not applied (${err.message}); fix it and save again`);
       }
@@ -182,13 +239,15 @@ export class Settings {
 
   snapshot() {
     return {
+      language: this.language,
+      languages: LANGUAGES,
       preset: this.preset,
-      presets: Object.fromEntries(Object.entries(PRESETS).map(([k, v]) => [k, { ...v, features: this.registry.filter((f) => inPreset(f, k)).map((f) => f.id) }])),
+      presets: Object.fromEntries(Object.keys(PRESETS).map((k) => [k, { label: PRESETS[k].label, description: PRESETS[k].description, features: this.registry.filter((f) => inPreset(f, k)).map((f) => f.id) }])),
       features: this.registry.map((f) => ({
-        id: f.id, label: f.label, description: f.description, group: f.group, optIn: !!f.optIn, experimental: !!f.experimental,
+        id: f.id, ...featureText(f), optIn: !!f.optIn, experimental: !!f.experimental,
         on: this.enabled[f.id], overridden: f.id in this.overrides,
       })),
-      params: this.params.map((p) => ({ ...p, value: getPath(this.config, p.key) })),
+      params: this.params.map((p) => ({ ...p, ...paramText(p), value: getPath(this.config, p.key) })),
     };
   }
 
@@ -210,7 +269,7 @@ export class Settings {
     const security = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
     if (req.method === 'GET' && url === '/') {
       res.writeHead(200, { ...security, 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'" });
-      res.end(settingsPage());
+      res.end(settingsPage(language()));
       return true;
     }
     const json = (code, body) => {

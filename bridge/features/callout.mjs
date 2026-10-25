@@ -1,3 +1,5 @@
+import { t } from '../i18n.mjs';
+
 // Idea 1 — "the builder is calling you": while a chat waits for a permission or an answer, its builder
 // stops working, a red "!" floats over its head, it bobs (crouch/stand), one bell rings and a red bossbar
 // names the chat. Idle prompts ("Claude is waiting for your next message") get a quieter yellow bar.
@@ -7,6 +9,7 @@ const BOB_MS = 120000; // stop bobbing after two minutes (the bar stays)
 const short = (s) => s.id.slice(0, 8).toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
 const markTag = (s) => `alps_mark_${short(s)}`;
 const barId = (s, kind) => `alps:${kind}_${short(s)}`;
+const IDLE_BAR = 'alps:idle_all';
 
 function urgent(ctx, s) {
   const w = ctx.rt(s).waiting;
@@ -15,9 +18,23 @@ function urgent(ctx, s) {
   return cur && (cur.kind === 'permission' || cur.kind === 'question') ? cur : null;
 }
 
+/** Remembers which bossbars exist (`bossbar list` prints their names, not their ids). */
+function trackBar(ctx, id, on) {
+  const list = (ctx.state.bossbars ??= []);
+  const i = list.indexOf(id);
+  if (on && i < 0) list.push(id);
+  if (!on && i >= 0) list.splice(i, 1);
+  ctx.save();
+}
+
+/** Removes our bars with this id prefix: the tracked ones plus every recent chat's (bars of older versions). */
 async function removeBars(ctx, prefix) {
-  const out = await ctx.cmd('bossbar list');
-  for (const id of out.match(/alps:[a-z0-9_.-]+/g) ?? []) if (id.startsWith(`alps:${prefix}`)) await ctx.cmd(`bossbar remove ${id}`);
+  const ids = new Set((ctx.state.bossbars ?? []).filter((id) => id.startsWith(`alps:${prefix}`)));
+  for (const s of Object.values(ctx.state.sessions)) if (Date.now() - (s.lastEvent ?? 0) < 7 * 86400000) ids.add(`alps:${prefix}${short(s)}`);
+  if (prefix === 'idle_') ids.add(IDLE_BAR);
+  for (const id of ids) await ctx.cmd(`bossbar remove ${id}`);
+  ctx.state.bossbars = (ctx.state.bossbars ?? []).filter((id) => !id.startsWith(`alps:${prefix}`));
+  ctx.save();
 }
 
 async function hide(ctx, s) {
@@ -26,6 +43,7 @@ async function hide(ctx, s) {
   r.callout = null;
   await ctx.cmd(`kill @e[type=minecraft:text_display,tag=${markTag(s)}]`);
   await ctx.cmd(`bossbar remove ${barId(s, 'wait')}`);
+  trackBar(ctx, barId(s, 'wait'), false);
   await ctx.cmd(`data merge entity ${ctx.builderSel(s)} {pose:"standing"}`);
   // s.pose stays as the build loop set it: it re-applies a different pose itself when needed.
 }
@@ -33,12 +51,13 @@ async function hide(ctx, s) {
 async function show(ctx, s, w, site) {
   const r = ctx.rt(s);
   const sel = ctx.builderSel(s);
-  const text = w.kind === 'question' ? `Задаёт вопрос: ${s.name}` : `Ждёт разрешения: ${s.name}`;
+  const text = t(w.kind === 'question' ? 'callout.bar.question' : 'callout.bar.permission', { name: s.name });
   r.callout = { kind: w.kind, at: Date.now(), next: 0, crouch: false, bar: 0 };
   // The "!" rides the builder, so it follows it without any further commands.
   await ctx.cmd(`execute at ${sel} run summon minecraft:text_display ~ ~2 ~ {Tags:["alps","alps_mark","${markTag(s)}"],billboard:"center",text:{text:"!",color:"red",bold:true},transformation:{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],translation:[0f,0.9f,0f],scale:[2.5f,2.5f,2.5f]}}`);
   await ctx.cmd(`ride @e[type=minecraft:text_display,tag=${markTag(s)},limit=1] mount ${sel}`);
   await ctx.cmd(`bossbar add ${barId(s, 'wait')} ${ctx.textJson(text)}`);
+  trackBar(ctx, barId(s, 'wait'), true);
   await ctx.cmd(`bossbar set ${barId(s, 'wait')} name ${ctx.textJson(text)}`);
   await ctx.cmd(`bossbar set ${barId(s, 'wait')} color red`);
   await ctx.cmd(`bossbar set ${barId(s, 'wait')} max 1`);
@@ -50,17 +69,17 @@ async function show(ctx, s, w, site) {
     const [x, y, z] = site?.front ?? [0, 0, 0];
     await ctx.tellraw('@a', [
       { text: '⌛ ', color: 'red' }, { text: s.name, color: 'yellow' },
-      { text: w.kind === 'question' ? ' задаёт тебе вопрос' : ' ждёт твоего разрешения' },
-      ...(site ? [{ text: '  [телепорт]', color: 'aqua', click_event: { action: 'run_command', command: `/tp @s ${x + 0.5} ${y} ${z + 2.5}` } }] : []),
+      { text: t(w.kind === 'question' ? 'callout.chat.question' : 'callout.chat.permission') },
+      ...(site ? [{ text: `  ${t('common.teleport')}`, color: 'aqua', click_event: { action: 'run_command', command: `/tp @s ${x + 0.5} ${y} ${z + 2.5}` } }] : []),
     ]);
   }
 }
 
 const callout = {
   id: 'callout',
-  group: 'Работа Claude',
-  label: 'Строитель зовёт тебя',
-  description: 'Когда чат ждёт разрешения или ответа: красный «!» над головой, один удар колокола, красная полоса сверху. Стройка на паузе.',
+  group: 'claude',
+  label: 'Your builder calls you',
+  description: 'When a chat waits for a permission or an answer: a red "!" above its head, one bell strike, a red bar at the top. Building pauses.',
   presets: ['basic'],
   async setup(ctx) {
     await ctx.cmd('kill @e[type=minecraft:text_display,tag=alps_mark]');
@@ -69,6 +88,11 @@ const callout = {
   },
   canBuild(ctx, s) {
     return !urgent(ctx, s);
+  },
+  async onTick(ctx, now) {
+    if (now < (callout.next ?? 0)) return;
+    callout.next = now + 5000;
+    for (const s of ctx.sessions()) if (ctx.rt(s).callout && !urgent(ctx, s)) await hide(ctx, s);
   },
   async onWork(ctx, s, site) {
     const r = ctx.rt(s);
@@ -107,7 +131,6 @@ const callout = {
 
 // One combined yellow bar for every chat that waits for its next task (ten idle chats must not stack
 // ten bars on the screen): "Ждёт следующей задачи: A" / "Ждут задачу: A, B и ещё 3".
-const IDLE_BAR = 'alps:idle_all';
 let idleShown = null; // text currently on the bar (null = no bar)
 let idleNext = 0;
 let idlePlayersAt = 0;
@@ -120,16 +143,16 @@ function idleText(ctx) {
     if (r.waiting?.kind === 'idle' && !s.active) names.push(ctx.cleanText(s.name, 22));
   }
   if (!names.length) return null;
-  if (names.length === 1) return `Ждёт следующей задачи: ${names[0]}`;
+  if (names.length === 1) return t('callout.idle.one', { name: names[0] });
   const shown = names.slice(0, 2).join(', ');
-  return `Ждут задачу: ${shown}${names.length > 2 ? ` и ещё ${names.length - 2}` : ''}`;
+  return names.length > 2 ? t('callout.idle.more', { names: shown, count: names.length - 2 }) : t('callout.idle.two', { names: shown });
 }
 
 const idleCallout = {
   id: 'idleCallout',
-  group: 'Работа Claude',
-  label: 'Жёлтая полоса «ждёт задачу»',
-  description: 'Чаты, которые закончили и ждут твоего следующего сообщения: одна тихая жёлтая полоса на всех, без звука. Пропадает со следующим сообщением.',
+  group: 'claude',
+  label: 'Yellow "waiting for a task" bar',
+  description: 'Chats that finished and wait for your next message: one quiet yellow bar for all of them, no sound. Gone with your next message.',
   presets: [],
   async setup(ctx) {
     await removeBars(ctx, 'idle_'); // also the per-chat bars of older versions
@@ -150,6 +173,7 @@ const idleCallout = {
     const had = idleShown;
     idleShown = text;
     idlePlayersAt = now;
+    trackBar(ctx, IDLE_BAR, !!text);
     if (!text) return ctx.fx.push(`bossbar remove ${IDLE_BAR}`, { key: 'idlebar' });
     const json = ctx.textJson(text);
     ctx.fx.push(had ? [`bossbar set ${IDLE_BAR} name ${json}`] : [`bossbar add ${IDLE_BAR} ${json}`, `bossbar set ${IDLE_BAR} name ${json}`, `bossbar set ${IDLE_BAR} color yellow`, `bossbar set ${IDLE_BAR} style notched_6`, `bossbar set ${IDLE_BAR} players @a`], { key: 'idlebar' });

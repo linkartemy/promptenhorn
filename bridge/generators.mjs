@@ -109,7 +109,12 @@ export class Generators {
     let bp;
     if (plot.type === 'square') bp = B.square?.(rngFrom(plot.seed));
     else if (plot.type === 'plaza') bp = B.plaza?.(rngFrom(plot.seed));
-    else if (B.BUILDINGS?.[plot.type]) bp = B.generate(plot.type, plot.seed, stage ? { stage } : undefined); // older generators ignore the options
+    else if (B.BUILDINGS?.[plot.type]) {
+      // Older generators ignore the options. `terrain` (adaptive plots only) asks for a slope / water variant,
+      // see docs/generator-contract.md, "Terrain variants"; only passed to generators that declare them.
+      const terrain = plot.terrain && B.TERRAIN_VARIANTS?.[plot.type]?.includes?.(plot.terrain.mode) ? { terrain: { ...plot.terrain, turns: plot.turns } } : null;
+      bp = B.generate(plot.type, plot.seed, stage || terrain ? { ...(stage ? { stage } : {}), ...terrain } : undefined);
+    }
     if (!bp) return null;
     return bp.toBuildList({ turns: plot.turns, size, offset, clipMin: 0, clipMax: size - 1 });
   }

@@ -9,17 +9,21 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Rcon, RconDisconnected, readProperties } from './rcon.mjs';
 import { rngFrom } from './blueprint.mjs';
-import { PLOT, Terrain, ChunkLoader, grow } from './terrain.mjs';
-import { STREETS, cellKey, plotRect, districtSeed, nextCell, pickType, zoneOf, labelOf, useBuildings } from './city.mjs';
-import { Generators, stagedList as stagedListOf } from './generators.mjs';
+import { PLOT, Terrain, ChunkLoader, grow, TerrainPlanner } from './terrain.mjs';
+import { InfraWorks, planAfterPlot, planShoreRenovation, terrainState, INFRA_VERSION } from './infra.mjs';
+import { STREETS, cellKey, parseCell, plotRect, districtSeed, nextCell, pickType, zoneOf, labelOf, useBuildings, catalog, turnsToWater } from './city.mjs';
+import { Generators, stagedList as stagedListOf, MAX_STAGE } from './generators.mjs';
 import { Renovator, diffLists } from './renovate.mjs';
 import { Effects, sweepCommand } from './fx.mjs';
 import { plotMeta } from './plotmeta.mjs';
 import { FORMS, formList, formSize, summitList } from './smallforms.mjs';
 import { Settings, readConfigFile } from './settings.mjs';
-import { FEATURES, FeatureHost } from './features/index.mjs';
+import { FEATURES, FeatureHost, FEATURE_PARAMS } from './features/index.mjs';
 import { PeakSurvey } from './peaks.mjs';
 import { MapPage } from './map-page.mjs';
+import { t, tOr, tParts } from './i18n.mjs';
+import { ensureDatapack } from './features/datapack.mjs';
+import { Builders, isBotName, MODES as BUILDER_MODES, SPEEDS as BOT_SPEEDS, CATCH_UP } from './builders/index.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -51,7 +55,23 @@ const DEFAULTS = {
   scratchDistrictName: 'Alpweide',
   searchOrigin: [0, 0], // where to start looking for the city's valley
   resetForceloadsOnStart: true, // the world should only keep force-loads this bridge needs
+  language: 'en', // in-game texts, settings and map pages (en, ru, es, de, fr, it, pt, zh, ja); switches live
   debugClockOffsetMinutes: 0, // testing only: shifts the bridge's idea of "now" (night shift, holidays, clocks)
+  lifeDensity: 'medium', // life of the city (features/citylife.mjs): low | medium | high caps on residents, seated people, animals
+  chatterFrequency: 'normal', // builders' chat lines (features/chatter.mjs): rare | normal | often
+  builderMode: 'fast', // fast (mannequin + RCON) | realistic (bots build by hand, bridge/builders/bot.mjs) | wild
+  builderBotsMax: 3, // realistic mode: one bot per active chat up to this many (machine capacity); other chats keep a mannequin
+  botSpeed: 'normal', // calm | normal | fast (fast: far blocks by RCON when the bot lags behind)
+  botViewDistance: 4, // chunks a bot asks the server for (it loads chunks like a player)
+  botMinFreeMemMB: 600, // no new bot below this much free RAM
+  offlineCatchUp: 'timelapse', // engine "offline": blocks earned with the server off appear as a timelapse | instant
+  offlineTimelapseSeconds: 120, // …spread over about this long
+  offlineMaxBacklog: 20000, // at most this many blocks owed per chat (offline work beyond it is not counted)
+  colonists: 'off', // 'on' (or builderMode 'wild'): forward hook events to the survival colony (wild/colony.mjs)
+  colonistsMax: 3, // colonists at most (the colony reads it from this file; one per active chat)
+  colonistsCaretaker: 'off', // 'on': one caretaker colonist works while no chat is active
+  wildUrl: 'http://127.0.0.1:7785/event',
+  wildHeartbeatFile: path.join(ROOT, '.wild-heartbeat'), // written by the colony; no forwarding while it is stale
 };
 const configPath = process.env.ALPS_CONFIG || path.join(ROOT, 'config.json');
 const userConfig = readConfigFile(configPath);
@@ -137,9 +157,13 @@ function save() {
 // ------------------------------------------------------------------ RCON
 
 const rcon = new Rcon({ host: '127.0.0.1', port: Number(props['rcon.port'] || 25575), password: props['rcon.password'] });
+let builders = null; // builder backends (bridge/builders), created once the features exist
 
 /** Runs a command; throws RconDisconnected when the server is unreachable, so callers never mistake that for success. */
 async function cmd(command) {
+  // Realistic mode: commands features aim at a builder that is a bot player get translated (builders/bot.mjs).
+  const translated = builders?.intercept(command);
+  if (translated != null) return translated;
   try {
     return await rcon.command(command);
   } catch (err) {
@@ -149,6 +173,8 @@ async function cmd(command) {
 
 const chunks = new ChunkLoader(cmd);
 const terrain = new Terrain(cmd, log, chunks);
+// Terrain-adaptive planning reads the world's region files (read-only) next to the probes above.
+const planner = new TerrainPlanner({ cmd, log, chunks, worldDir: path.join(config.serverDir, props['level-name'] || 'world') });
 const fx = new Effects(cmd, log);
 
 // Releasing a plot's chunks right after killing its builder freezes the death animation (the chunk stays
@@ -230,6 +256,7 @@ async function setupWorld(firstConnect) {
   renovator.reset();
   // NoAI also disables gravity, so frozen villagers can end up hanging in the air: keep both directions in sync.
   await cmd(`execute as @e[type=minecraft:villager,tag=alps] run data merge entity @s {NoAI:${config.villagerAI ? 0 : 1}b}`);
+  await builders.setup();
   await features.emit('setup', firstConnect);
 }
 
@@ -326,14 +353,73 @@ function streetTexture(key, r, type, zone) {
 
 const newChron = () => ({ start: Date.now(), sessions: {} });
 
+// ------------------------------------------------------------------ terrain-adaptive planning
+//
+// With "adaptive-terrain" on, new plots follow the terrain (docs/terrain-adaptive-design.md): nextCell
+// prices cells from a scan of the region files (never water or cliffs), a plot's level comes from the scan
+// without the old clamp, the lot is prepared within an earthwork budget, and quays, piers, lanes, viewpoints,
+// bridges and the harbour are planned around it (bridge/infra.mjs). Existing plots are never changed.
+
+const terrainOn = () => settings.on('adaptive-terrain') && !!state.city;
+const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const neighbourPlots = (cell) => N4.map(([a, b]) => state.plots[state.cells[cellKey([cell[0] + a, cell[1] + b])]]).filter(Boolean);
+
+/** nextCell / districtSeed hooks: the planner's cost, crossings and cells reserved for infrastructure. */
+function terrainChooser() {
+  const T = terrainState(state);
+  return {
+    cost: (c) => planner.houseCost(c, neighbourPlots(c).map((p) => ({ y: p.y }))),
+    hop: (c) => {
+      const kind = planner.hop(c);
+      return kind === 'bridge' && !settings.on('river-bridges') ? null : kind;
+    },
+    reserved: (c) => !!T.reserved[cellKey(c)],
+  };
+}
+
+/** Scans the cells a district may grow into (generating missing chunks first) plus the whole town. */
+async function terrainSurvey(cells, margin = 2) {
+  planner.setOrigin(state.city.cx, state.city.cz);
+  await planner.ensureGenerated(cells, 4);
+  planner.cover([...Object.values(state.plots).map((p) => p.cell), ...cells], margin);
+}
+
+const infraCtx = () => ({ planner, state, log, on: (id) => settings.on(id) });
+
+/** The side of a lot that faces open water (its own water edge, else a neighbouring water cell), or null. */
+function waterSideOf(cell, plan) {
+  if (plan?.waterSides?.length) return plan.waterSides[0];
+  for (const [side, [a, b]] of Object.entries({ N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] })) {
+    const n = planner.cell([cell[0] + a, cell[1] + b]);
+    if (n && n.cls === 'water' && n.waterType !== 'river') return side;
+  }
+  return null;
+}
+
+/** Plans quays, piers, promenades, viewpoints, the harbour (and the lane / bridge that led here) around a plot. */
+function planInfra(plot, hop = null) {
+  if (!terrainOn() || !planner.origin) return;
+  try {
+    planAfterPlot(infraCtx(), plot, hop);
+  } catch (err) {
+    log(`infra planning around ${plot.key}: ${err.stack ?? err.message}`);
+  }
+}
+
 /** Creates a plot on a cell: picks height, terraces the ground, lays the street. Throws (after cleanup) on failure. */
 async function createPlot(cell, { type, district, sessionId, seed, stage = 2, isPublic = false }) {
   const key = cellKey(cell);
   const r = plotRect(state.city, cell);
   const zone = zoneOf(cell);
-  const ground = key === '0,0' ? { y: state.city.baseY, top: state.city.baseY } : await plotGround(cell);
-  const plot = { key, cell, district, zone, x0: r.x1, z0: r.z1, y: ground.y, type, seed, turns: facingTurns(cell), placed: 0, done: false, sessionId, gen: gens.current, street: STREET_VERSION, stage };
+  // Adaptive: the level comes from the scan (no clamp); the old rules probe and clamp to the neighbours.
+  const plan = terrainOn() && planner.origin ? planner.lotPlan(cell, neighbourPlots(cell).map((p) => ({ y: p.y }))) : null;
+  const ground = plan ? { y: plan.y, top: plan.top } : key === '0,0' ? { y: state.city.baseY, top: state.city.baseY } : await plotGround(cell);
+  // Shore types (boathouse, lido…) are drawn with the water on their local north: turn them to the water.
+  const waterSide = plan ? waterSideOf(cell, plan) : null;
+  const turns = waterSide && catalog()[type]?.kind === 'shore' ? turnsToWater(waterSide) : facingTurns(cell);
+  const plot = { key, cell, district, zone, x0: r.x1, z0: r.z1, y: ground.y, type, seed, turns, placed: 0, done: false, sessionId, gen: gens.current, street: STREET_VERSION, stage };
   if (isPublic) plot.public = true;
+  if (plan) plot.terrain = { mode: plan.mode, aspect: plan.aspect, waterSides: plan.waterSides, waterSide, drop: plan.drop, cls: plan.cls, v: 1 };
   const { hash, list } = buildList(plot); // generate before touching the world: a broken generator must not leave an empty lot
   plot.bp = hash;
   plot.total = list.length;
@@ -343,7 +429,20 @@ async function createPlot(cell, { type, district, sessionId, seed, stage = 2, is
   const owner = `plot:${key}`;
   try {
     await chunks.hold(owner, grow(r, 8));
-    await terrain.preparePlot(r, ground.y, { obstacles, street: streetTexture(key, r, type, zone), top: ground.top });
+    if (plan) {
+      const reserved = Object.keys(terrainState(state).reserved).map((k) => plotRect(state.city, parseCell(k)));
+      const openSides = Object.entries({ E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] }).filter(([, [a, b]]) => !state.plots[state.cells[cellKey([cell[0] + a, cell[1] + b])]]).map(([s]) => s);
+      const ownVariant = !!gens.currentModule.B.TERRAIN_VARIANTS?.[type]?.includes?.(plan.mode); // the house shows the slope itself
+      const { cmds, stats } = planner.adaptiveOps(r, plan, { holes: [...obstacles, ...reserved], street: streetTexture(key, r, type, zone), openSides, seed: key, cellar: !ownVariant });
+      for (const c of cmds) await cmd(c);
+      Object.assign(plot.terrain, { cut: stats.cut, fill: stats.fill, wall: stats.wall, posts: stats.posts, deck: stats.deck });
+      // What the old rules would have moved here (neighbours at their old-rule levels, for a fair comparison).
+      const legacy = planner.legacyEarthwork(cell, neighbourPlots(cell).map((p) => p.terrain?.legacy?.y ?? p.y), state.city.baseY);
+      if (legacy) plot.terrain.legacy = legacy;
+      const tot = (terrainState(state).earthwork ??= { plots: 0, cut: 0, fill: 0, wall: 0, posts: 0, deck: 0, cmds: 0 });
+      for (const k of Object.keys(tot)) tot[k] += k === 'plots' ? 1 : stats[k] ?? 0;
+      log(`Plot ${key}: ${plan.mode} at y=${plan.y} (drop ${plan.drop}, cut ${stats.cut}, fill ${stats.fill}, wall ${stats.wall}, posts ${stats.posts}, deck ${stats.deck}; ${stats.cmds} commands)`);
+    } else await terrain.preparePlot(r, ground.y, { obstacles, street: streetTexture(key, r, type, zone), top: ground.top });
     await lampPost(plot);
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const n = state.plots[state.cells[cellKey([cell[0] + dx, cell[1] + dz])]];
@@ -366,7 +465,10 @@ async function createPlot(cell, { type, district, sessionId, seed, stage = 2, is
 function seamCommands(plot, neighbour, [dx, dz]) {
   const out = [];
   const diff = neighbour.y - plot.y;
-  if (!diff) return out;
+  if (!diff) {
+    if (plot.terrain || neighbour.terrain) out.push(...openSeamRails(plot, neighbour, [dx, dz])); // a lot railing may stand on the edge
+    return out;
+  }
   const [low, high] = diff > 0 ? [plot, neighbour] : [neighbour, plot];
   const dir = diff > 0 ? [dx, dz] : [-dx, -dz]; // from the low plot towards the high one
   const h = Math.abs(diff);
@@ -382,16 +484,71 @@ function seamCommands(plot, neighbour, [dx, dz]) {
     return [p.x0 + 1, p.z0 + k, p.x0 + PLOT - 2, p.z0 + k];
   };
   const put = ([x1, z1, x2, z2], y, block) => out.push(`fill ${x1} ${y} ${z1} ${x2} ${y} ${z2} ${block}`);
+  if (plot.terrain || neighbour.terrain) out.push(...openSeamRails(plot, neighbour, [dx, dz]));
   if (h === 1) {
     put(row(low, 0, dir), low.y + 1, stairs);
     return out;
   }
-  put(row(low, 0, dir), low.y + 1, full);
-  put(row(low, 0, dir), low.y + 2, stairs);
-  put(row(low, 1, dir), low.y + 1, stairs);
-  if (h > 2) {
-    const [x1, z1, x2, z2] = row(high, 0, [-dir[0], -dir[1]]);
-    out.push(`fill ${x1} ${low.y + 1} ${z1} ${x2} ${high.y - 1} ${z2} stone_bricks`);
+  const highRow = row(high, 0, [-dir[0], -dir[1]]);
+  if (h <= 4) {
+    // Steps across the whole street, a retaining wall under the upper street (h = 4: its edge row is a step too).
+    put(row(low, 0, dir), low.y + 1, full);
+    put(row(low, 0, dir), low.y + 2, stairs);
+    put(row(low, 1, dir), low.y + 1, stairs);
+    if (h > 2) out.push(`fill ${highRow[0]} ${low.y + 1} ${highRow[1]} ${highRow[2]} ${high.y - 1} ${highRow[3]} stone_bricks`);
+    if (h === 4) {
+      put(highRow, high.y, 'air');
+      put(highRow, high.y - 1, stairs);
+    }
+    return out;
+  }
+  // 5+: a retaining wall along the whole edge with a railing on top. Up to 8 a Treppengasse runs along the
+  // foot of the wall (one flight, a landing half way, a lantern); beyond that there is no direct way up.
+  out.push(`fill ${highRow[0]} ${low.y + 1} ${highRow[1]} ${highRow[2]} ${high.y - 1} ${highRow[3]} stone_bricks`);
+  put(highRow, high.y + 1, 'stone_brick_wall');
+  const lowRow = row(low, 0, dir);
+  const alongX = lowRow[0] !== lowRow[2];
+  const at = (k, rowRect) => (alongX ? [rowRect[0] + k, rowRect[1]] : [rowRect[0], rowRect[1] + k]); // k = 0..18 along the edge
+  const runFacing = alongX ? 'east' : 'south';
+  const wallSide = facing; // the wall is on this side of the low row
+  if (h <= 8) {
+    const heights = [];
+    for (let k = 1; k <= h - 1; k++) {
+      heights.push(k);
+      if (h >= 6 && k === Math.floor((h - 1) / 2)) heights.push(k); // landing
+    }
+    const k0 = 9 - Math.floor(heights.length / 2);
+    heights.forEach((hk, n) => {
+      const [x, z] = at(k0 + n, lowRow);
+      const up = n === 0 || heights[n - 1] < hk;
+      if (hk > 1) out.push(`fill ${x} ${low.y + 1} ${z} ${x} ${low.y + hk - 1} ${z} ${full}`);
+      out.push(`setblock ${x} ${low.y + hk} ${z} ${up ? `${rural ? 'cobblestone' : 'stone_brick'}_stairs[facing=${runFacing},half=bottom]` : full}`);
+    });
+    const [ex, ez] = at(k0 + heights.length - 1, highRow);
+    out.push(`setblock ${ex} ${high.y + 1} ${ez} air`); // the way up onto the upper street
+    const [lx, lz] = at(Math.max(0, k0 - 1), highRow);
+    out.push(`setblock ${lx} ${high.y + 2} ${lz} lantern`);
+  } else {
+    // Too high for a lane: flowers on the railing, ivy on the wall.
+    for (let k = 1; k <= 17; k += 4) {
+      const [x, z] = at(k, highRow);
+      out.push(`setblock ${x} ${high.y + 2} ${z} ${['potted_red_tulip', 'potted_poppy', 'potted_azure_bluet', 'potted_oxeye_daisy'][k % 4]}`);
+      const [vx, vz] = at(k + 1, lowRow);
+      out.push(`fill ${vx} ${low.y + 2} ${vz} ${vx} ${high.y - 2} ${vz} vine[${wallSide}=true]`);
+    }
+  }
+  return out;
+}
+
+/** Takes down lot railings on a shared edge (adaptive lots put them where a lot ends in a wall). */
+function openSeamRails(plot, neighbour, [dx, dz]) {
+  const out = [];
+  for (const [p, d] of [[plot, [dx, dz]], [neighbour, [-dx, -dz]]]) {
+    const x1 = d[0] === 1 ? p.x0 + PLOT - 1 : p.x0 + (d[0] === -1 ? 0 : 1);
+    const x2 = d[0] === -1 ? p.x0 : d[0] === 1 ? p.x0 + PLOT - 1 : p.x0 + PLOT - 2;
+    const z1 = d[1] === 1 ? p.z0 + PLOT - 1 : p.z0 + (d[1] === -1 ? 0 : 1);
+    const z2 = d[1] === -1 ? p.z0 : d[1] === 1 ? p.z0 + PLOT - 1 : p.z0 + PLOT - 2;
+    out.push(`fill ${x1} ${p.y + 1} ${z1} ${x2} ${p.y + 1} ${z2} air replace minecraft:stone_brick_wall`);
   }
   return out;
 }
@@ -416,7 +573,7 @@ async function lampPost(plot) {
 // lamp post, seams and paving re-applied (idempotently) by the renovation crew.
 const STREET_VERSION = (() => {
   let h = 2166136261;
-  const src = [seamCommands, lampPostCommands, streetTexture, rngFrom].map(String).join('\n') + JSON.stringify(STREETS);
+  const src = [seamCommands, openSeamRails, lampPostCommands, streetTexture, rngFrom].map(String).join('\n') + JSON.stringify(STREETS);
   for (let i = 0; i < src.length; i++) h = Math.imul(h ^ src.charCodeAt(i), 16777619);
   return (h >>> 0).toString(36);
 })();
@@ -541,13 +698,31 @@ async function nameplate(tag, plot, text, color, scale, height) {
 async function ensureCity() {
   if (state.city && !state.city.pending) return state.city;
   if (!state.city) {
-    await announce([{ text: 'Ищу долину для города…', color: 'gray' }]);
-    const site = await terrain.findValley(config.searchOrigin);
+    await announce([{ text: t('bridge.city.searching'), color: 'gray' }]);
+    let site = null;
+    if (settings.on('adaptive-terrain')) {
+      // Phase 5: a valley with a lake or river and hills around, chosen from a scan of the region files.
+      try {
+        const found = await planner.findSite(config.searchOrigin);
+        if (found) {
+          planner.setOrigin(found.x, found.z);
+          planner.cover([[0, 0]], 3);
+          const centre = planner.lotPlan([0, 0]);
+          if (centre) site = { x: found.x, z: found.z, y: centre.y };
+        }
+      } catch (err) {
+        log(`scan-based site selection failed (${err.message}); probing instead`);
+      }
+    }
+    site ??= await terrain.findValley(config.searchOrigin);
     log(`City site: ${site.x}, ${site.z} (ground y=${site.y})`);
     state.city = { name: config.cityName, cx: site.x, cz: site.z, baseY: site.y, pending: true };
     save();
   }
+  if (!state.plots['0,0'] && terrainOn()) await terrainSurvey([[0, 0]], 3);
+  const fresh = !state.plots['0,0'];
   const plot = state.plots['0,0'] ?? (await createPlot([0, 0], { type: 'square', district: null, sessionId: null, seed: 'city-square' }));
+  if (fresh) planInfra(plot);
   await buildInstantly(plot);
   await chunks.hold(`plot:${plot.key}`, plotRect(state.city, plot.cell));
   await nameplate('alps_name_city', plot, config.cityName, 'gold', 4, 8);
@@ -555,7 +730,7 @@ async function ensureCity() {
   await cmd(`setworldspawn ${state.city.cx} ${plot.y + 1} ${state.city.cz + 7}`);
   delete state.city.pending;
   save();
-  await announce([{ text: 'Основан город ' }, { text: config.cityName, color: 'gold' }], state.city.cx, plot.y + 2, state.city.cz + 7);
+  await announce(tParts('common.city.founded', { city: { text: config.cityName, color: 'gold' } }), state.city.cx, plot.y + 2, state.city.cz + 7);
   return state.city;
 }
 
@@ -574,14 +749,23 @@ async function ensureDistrict(key, name) {
   let district = state.districts[key];
   if (district && !district.pending) return district;
   if (!district) {
-    const seed = districtSeed(state, state.districtCount);
+    let chooser = null;
+    if (terrainOn()) {
+      // Scan around the town (+6 cells) so the plaza lands on buildable land, not in the lake.
+      const radius = Math.max(4, ...Object.values(state.plots).map((p) => Math.max(Math.abs(p.cell[0]), Math.abs(p.cell[1])))) + 6;
+      await terrainSurvey([[-radius, -radius], [radius, radius]], 1);
+      chooser = terrainChooser();
+    }
+    const seed = districtSeed(state, state.districtCount, chooser);
     district = { key, name, index: state.districtCount, seed, cells: [cellKey(seed)], buildingsStarted: 0, buildingsDone: 0, typeCounts: {}, recentTypes: [], pending: true };
     state.cells[cellKey(seed)] = cellKey(seed); // reserved; resumed by ensureDistrict() after a crash
     state.districts[key] = district;
     state.districtCount++;
   }
   const plotKey = cellKey(district.seed);
+  const freshPlaza = !state.plots[plotKey];
   const plot = state.plots[plotKey] ?? (await createPlot(district.seed, { type: 'plaza', district: key, sessionId: null, seed: `plaza:${key}` }));
+  if (freshPlaza) planInfra(plot);
   await buildInstantly(plot);
   await chunks.hold(`plot:${plot.key}`, plotRect(state.city, plot.cell));
   await nameplate(`alps_name_${district.index}`, plot, district.name, 'yellow', 2.5, 6);
@@ -589,17 +773,30 @@ async function ensureDistrict(key, name) {
   delete district.pending;
   save();
   log(`District "${district.name}" founded at cell ${plotKey}`);
-  await announce([{ text: 'Новый квартал: ' }, { text: district.name, color: 'yellow' }], plot.x0 + 10, plot.y + 2, plot.z0 + 10);
+  await announce(tParts('common.district.new', { name: { text: district.name, color: 'yellow' } }), plot.x0 + 10, plot.y + 2, plot.z0 + 10);
   features.emitSync('onDistrict', district);
   return district;
 }
 
 /** A new plot for the district. `type` forces the building (public works, parks); else the zone decides. */
 async function newPlot(district, sessionId, { type: forced, stage, isPublic } = {}) {
-  const cell = nextCell(state, district);
+  let cell = null;
+  let lot = null;
+  if (terrainOn()) {
+    const frontier = [];
+    for (const [i, j] of district.cells.map(parseCell)) for (const [a, b] of N4) frontier.push([i + a, j + b], [i + 2 * a, j + 2 * b]);
+    await terrainSurvey(frontier);
+    cell = nextCell(state, district, terrainChooser());
+    if (cell) {
+      lot = planner.lotPlan(cell, neighbourPlots(cell).map((p) => ({ y: p.y })));
+      if (lot) lot = { ...lot, waterSide: waterSideOf(cell, lot) };
+    }
+    else log(`No buildable cell next to district ${district.name} (water / cliffs all round); using the old rules once`);
+  }
+  cell ??= nextCell(state, district);
   const key = cellKey(cell);
   const seed = `${key}:${sessionId}`;
-  const type = forced ?? pickType(state, district, cell, seed);
+  const type = forced ?? pickType(state, district, cell, seed, lot);
   const before = { cells: [...district.cells], started: district.buildingsStarted, counts: { ...district.typeCounts }, recent: [...district.recentTypes] };
   district.cells.push(key);
   if (type !== 'park') {
@@ -609,7 +806,9 @@ async function newPlot(district, sessionId, { type: forced, stage, isPublic } = 
   }
   state.cells[key] = key; // reserve before the slow terrain work
   try {
-    return await createPlot(cell, { type, district: district.key, sessionId, seed, stage, isPublic });
+    const plot = await createPlot(cell, { type, district: district.key, sessionId, seed, stage, isPublic });
+    planInfra(plot, cell.via ? { via: cell.via, viaKind: cell.viaKind, from: cell.from } : null);
+    return plot;
   } catch (err) {
     delete state.cells[key];
     district.cells = before.cells;
@@ -675,7 +874,9 @@ function objList(o) {
   }
   return objCache.get(o.id);
 }
-const objLabel = (o) => (o.type === 'summit' ? 'Смотровая на вершине' : FORMS[o.type]?.label ?? o.type);
+/** Building type as shown to players (catalog `building.<type>`, else the generator's own label). */
+const typeLabel = (type) => tOr(`building.${type}`, type === 'park' ? 'Park' : labelOf(type));
+const objLabel = (o) => (o.type === 'summit' ? t('bridge.site.summit') : tOr(`form.${o.type}`, FORMS[o.type]?.label ?? o.type));
 
 function siteOf(key) {
   if (!key) return null;
@@ -687,7 +888,7 @@ function siteOf(key) {
     return {
       key, plot, rec: plot, kind: plot.public ? 'public' : plot.type === 'park' ? 'park' : 'house',
       rect: plotRect(state.city, plot.cell), front: [fx, plot.y + 1, fz], look: [hx, hz],
-      label: (plot.type === 'park' ? 'Парк' : labelOf(plot.type)) + (plot.public && plot.type !== 'park' ? ' · для квартала' : ''),
+      label: typeLabel(plot.type) + (plot.public && plot.type !== 'park' ? t('bridge.site.public') : ''),
     };
   }
   const o = state.objects?.[key.slice(4)];
@@ -700,7 +901,7 @@ function siteOf(key) {
     key, obj: o, rec: o, plot: host, kind: o.kind,
     rect: host ? plotRect(state.city, host.cell) : { x1: o.x0 - 3, z1: o.z0 - 3, x2: o.x0 + size + 3, z2: o.z0 + size + 3 },
     front: [fx, o.y0 + 1, fz], look: [o.x0 + size / 2, o.z0 + size / 2],
-    label: objLabel(o) + (o.public ? ' · общее' : ''),
+    label: objLabel(o) + (o.public ? t('bridge.site.shared') : ''),
   };
 }
 
@@ -727,20 +928,17 @@ function contribution(rec, s) {
   return e;
 }
 
+// The builder itself is a backend (bridge/builders): a mannequin moved by RCON (fast mode) or a bot player
+// that walks and builds by hand (realistic mode). These wrappers keep the call sites below unchanged.
+const body = (session) => builders.of(session);
+
 async function ensureBuilder(session, site) {
-  const tag = builderTag(session);
-  if ((await cmd(`execute if entity @e[tag=${tag}]`)).includes('passed')) return;
-  const [wx, wy, wz] = site.front;
-  const out = await cmd(`summon minecraft:mannequin ${wx + 0.5} ${wy} ${wz + 0.5} {UUID:${builderUuid(session, { key: site.key })},Tags:["alps","${tag}"],Invulnerable:1b,PersistenceRequired:1b,immovable:1b,hide_description:1b,CustomNameVisible:1b,CustomName:${textJson(session.name)},profile:{texture:"entity/player/wide/${session.skin}"}}`);
-  await cmd(`particle minecraft:poof ${wx + 0.5} ${wy + 1} ${wz + 0.5} 0.3 0.5 0.3 0.02 20`);
-  if (out.includes('Summoned')) {
-    rt(session).hand = null;
-    await features.emit('onBuilderSpawn', session, site);
-  }
+  if ((await builders.claim(session, site)) === 'wait') return; // realistic mode: a free bot takes the job instead of a mannequin
+  await body(session).ensure(session, site);
 }
 
 async function setPose(session, pose) {
-  await cmd(`data merge entity @e[tag=${builderTag(session)},limit=1] {pose:"${pose}"}`);
+  await body(session).setPose(session, pose);
 }
 
 /** Puts `item` in the builder's hand, unless it already holds it. */
@@ -748,36 +946,31 @@ async function setHand(session, item) {
   const r = rt(session);
   if (r.hand === item) return;
   r.hand = item;
-  await cmd(`item replace entity @e[tag=${builderTag(session)},limit=1] weapon.mainhand with ${item}`);
+  await body(session).setHand(session, item);
 }
 const refreshHand = (session) => setHand(session, features.first('handItem', session, null) ?? 'minecraft:air');
 
 async function moveBuilderToFront(session, site) {
-  const [wx, wy, wz] = site.front;
-  const [hx, hz] = site.look;
-  const yaw = Math.round((Math.atan2(-(hx - wx), hz - wz) * 180) / Math.PI);
-  await cmd(`tp @e[tag=${builderTag(session)},limit=1] ${wx + 0.5} ${wy} ${wz + 0.5} ${yaw} 0`);
-  Object.assign(rt(session), { pos: [wx + 0.5, wy, wz + 0.5], posAt: site.key }); // for the web map
+  await body(session).toFront(session, site);
   await refreshHand(session);
 }
 
 /** The builder walks over to another site: poof here, hold the new area, appear there. */
 async function moveTo(session, site) {
   const r = rt(session);
-  const tag = builderTag(session);
   // session.at (persisted) is where the builder entity stands; its chunks stay loaded while it is there,
   // so it can always be found and removed before it re-appears elsewhere (no duplicate builders).
   if (session.at && session.at !== site.key) {
     const old = siteOf(session.at);
     if (old) await holdOwner(`builder:${session.id}`, old.rect);
     await features.emit('onBuilderLeave', session, old);
-    await cmd(`execute at @e[tag=${tag},limit=1] run particle minecraft:poof ~ ~1 ~ 0.3 0.5 0.3 0.02 20`);
-    await cmd(`kill @e[tag=${tag}]`);
+    await body(session).leave(session, old);
     r.hand = null;
     if (old) await holdArea(`leaving:${session.id}:${old.key}`, old.rect, 4000); // let the death animation finish
   }
   await holdOwner(`builder:${session.id}`, site.rect);
   r.siteHeld = site.key;
+  r.freshSite = site.key; // a bot taking this job walks over from the district plaza
   session.at = site.key;
   session.pose = null;
   save();
@@ -786,9 +979,7 @@ async function moveTo(session, site) {
 
 /** Classic mode: the builder leaves a finished house (it re-appears at its next plot). */
 async function sendBuilderHome(session) {
-  const tag = builderTag(session);
-  await cmd(`execute at @e[tag=${tag},limit=1] run particle minecraft:poof ~ ~1 ~ 0.3 0.5 0.3 0.02 20`);
-  await cmd(`kill @e[tag=${tag}]`);
+  await body(session).remove(session, 'home');
   rt(session).hand = null;
   rt(session).siteHeld = null;
   session.at = null;
@@ -798,7 +989,7 @@ async function sendBuilderHome(session) {
 async function updateScore(session, site, built) {
   const rec = site?.rec;
   const pct = rec ? Math.min(100, Math.floor((100 * rec.placed) / Math.max(1, rec.total))) : 0;
-  const label = site ? `${site.label} ${pct}%` : 'ищет участок';
+  const label = site ? `${site.label} ${pct}%` : t('bridge.score.searching');
   const color = String(session.pose).includes('sleeping') ? 'gray' : session.active ? 'green' : 'yellow';
   const key = `${label}|${session.name}|${color}`;
   if (session.scoreKey === key) return;
@@ -810,7 +1001,7 @@ async function updateScore(session, site, built) {
 }
 
 async function announce(parts, x, y, z) {
-  const tp = x == null ? [] : [{ text: '  [телепорт]', color: 'aqua', click_event: { action: 'run_command', command: `/tp @s ${x} ${y} ${z}` } }];
+  const tp = x == null ? [] : [{ text: `  ${t('common.teleport')}`, color: 'aqua', click_event: { action: 'run_command', command: `/tp @s ${x} ${y} ${z}` } }];
   await cmd(`tellraw @a ${JSON.stringify([{ text: '' }, { text: '⛰ ', color: 'gold' }, ...parts, ...tp])}`);
 }
 
@@ -852,11 +1043,13 @@ async function finishPlot(session, plot) {
     const out = await cmd(`summon minecraft:villager ${vx + 0.5} ${plot.y + 1} ${vz + 0.5} {Tags:["alps"],PersistenceRequired:1b,${config.villagerAI ? '' : 'NoAI:1b,'}VillagerData:{profession:"minecraft:${profession}",level:2,type:"minecraft:${rng.pick(['snow', 'taiga', 'plains'])}"}}`);
     if (out.includes('Summoned')) district.villagers = (district.villagers ?? 0) + 1;
   }
-  const what = labelOf(plot.type);
-  if (plot.public) await announce([{ text: session.name, color: 'yellow' }, { text: ` построил(а) для квартала ` }, { text: district?.name ?? '?', color: 'gold' }, { text: `: ${what}` }], cx, top + 3, cz);
-  else if (plot.type === 'park') await announce([{ text: 'В квартале ' }, { text: district?.name ?? '?', color: 'gold' }, { text: ' разбит парк' }], cx, plot.y + 2, cz);
-  else if (firstTime) await announce([{ text: session.name, color: 'yellow' }, { text: ` достроил(а): ${what} в квартале ` }, { text: district?.name ?? '?', color: 'gold' }], cx, top + 3, cz);
-  else await announce([{ text: session.name, color: 'yellow' }, { text: ` расширил(а) дом: ${what}, этап ${plot.stage}` }], cx, top + 3, cz);
+  const what = typeLabel(plot.type);
+  const who = { text: session.name, color: 'yellow' };
+  const where = { text: district?.name ?? '?', color: 'gold' };
+  if (plot.public) await announce(tParts('bridge.done.public', { name: who, district: where, what }), cx, top + 3, cz);
+  else if (plot.type === 'park') await announce(tParts('bridge.done.park', { district: where }), cx, plot.y + 2, cz);
+  else if (firstTime) await announce(tParts('bridge.done.house', { name: who, district: where, what }), cx, top + 3, cz);
+  else await announce(tParts('bridge.done.stage', { name: who, what, stage: plot.stage }), cx, top + 3, cz);
   if (economy()) await moveBuilderToFront(session, siteOf(`plot:${plot.key}`));
   else await sendBuilderHome(session);
   features.emitSync('afterFinish', session, plot);
@@ -874,7 +1067,7 @@ async function finishObject(session, o) {
   await cmd(`particle minecraft:happy_villager ${o.x0 + size / 2} ${o.y0 + 2} ${o.z0 + size / 2} ${size / 3} 0.6 ${size / 3} 0 15`);
   const site = siteOf(`obj:${o.id}`);
   if (site) await moveBuilderToFront(session, site);
-  if (o.type === 'summit') await announce([{ text: session.name, color: 'yellow' }, { text: ' поставил(а) смотровую и крест на вершине' }], o.x0 + 2, o.y0 + 2, o.z0 + 6);
+  if (o.type === 'summit') await announce(tParts('bridge.done.summit', { name: { text: session.name, color: 'yellow' } }), o.x0 + 2, o.y0 + 2, o.z0 + 6);
   features.emitSync('onObjectDone', session, o);
 }
 
@@ -883,8 +1076,7 @@ async function retire(session) {
   const site = siteOf(session.job);
   const plot = session.plotKey && state.plots[session.plotKey];
   await features.emit('onRetire', session, plot || null, site);
-  await cmd(`execute at @e[tag=${tag},limit=1] run particle minecraft:poof ~ ~1 ~ 0.3 0.5 0.3 0.02 20`);
-  await cmd(`kill @e[tag=${tag}]`);
+  await body(session).remove(session, 'retire');
   await cmd(`scoreboard players reset ${holder(session)} alps`);
   // Unfinished work goes back to the pool: another chat of this project can finish it.
   if (plot && !plot.done) plot.sessionId = null;
@@ -976,7 +1168,9 @@ async function formJob(session, { isPublic = false } = {}) {
     if (made >= Math.min(3, 1 + Math.floor((session.actions ?? 0) / 8))) return null;
   }
   const rng = rngFrom(`${session.id}:${state.nextObjectId ?? 0}:form`);
-  const type = rng.weighted([['bench', 3], ['linden', 2], ['fir', 1.5], ['flowerbed', 3], ['lamp', 2], ['well', 0.7], ['fountain', 0.7], ['bikestand', 1]]);
+  // Lamps fit into every gap of a plaza: a few are a street, dozens are a forest of poles.
+  const lamps = Object.values(state.objects ?? {}).filter((o) => o.type === 'lamp' && o.district === district.key).length;
+  const type = rng.weighted([['bench', 3], ['linden', 2], ['fir', 1.5], ['flowerbed', 3], ['lamp', lamps < 4 ? 2 : 0], ['well', 0.7], ['fountain', 0.7], ['bikestand', 1]]);
   const size = formSize(type);
   const hosts = [state.plots[cellKey(district.seed)], ...district.cells.map((k) => state.plots[k]).filter((p) => p?.type === 'park' && p.done)].filter(Boolean);
   for (const host of hosts) {
@@ -1013,8 +1207,10 @@ async function publicJob(session) {
       open.sessionId = session.id;
       return `plot:${open.key}`;
     }
-    if (!existing.length) {
-      const plot = await newPlot(district, session.id, { type, stage: 2, isPublic: true });
+    // A city-unique type (the clock tower) is built once for the whole town, not once per district.
+    const cityWide = Buildings.CATALOG?.[type]?.unique === 'city' && Object.values(state.plots).some((p) => p.type === type);
+    if (!existing.length && !cityWide) {
+      const plot = await newPlot(district, session.id, { type, stage: MAX_STAGE, isPublic: true }); // public buildings come complete (contract §3)
       return `plot:${plot.key}`;
     }
   }
@@ -1027,7 +1223,8 @@ async function publicJob(session) {
   }
   if (!parks.length) return `plot:${(await newPlot(district, session.id, { type: 'park', isPublic: true })).key}`;
   const rng = rngFrom(`${session.id}:${state.nextObjectId ?? 0}:park`);
-  const type = rng.weighted([['linden', 3], ['fir', 2], ['bench', 2], ['flowerbed', 2], ['fountain', 1], ['lamp', 1.5]]);
+  const lamps = Object.values(state.objects ?? {}).filter((o) => o.type === 'lamp' && o.district === district.key).length;
+  const type = rng.weighted([['linden', 3], ['fir', 2], ['bench', 2], ['flowerbed', 2], ['fountain', 1], ['lamp', lamps < 6 ? 1.5 : 0]]);
   for (const park of parks.filter((p) => p.done)) {
     const spots = formSpots(park, formSize(type));
     if (!spots.length) continue;
@@ -1069,6 +1266,9 @@ async function cityJob(session) {
     return `obj:${o.id}`;
   }
   if (!peak) peakSurvey.request();
+  // The forest is a sink, not a flood: a bounded number of trees (they are state records and blocks).
+  const trees = Object.values(state.objects ?? {}).filter((o) => o.kind === 'tree').length;
+  if (trees >= Math.min(200, 60 + 15 * Object.keys(state.districts).length)) return null;
   const radius = Math.max(40, ...Object.values(state.plots).map((p) => Math.hypot(p.cell[0], p.cell[1]) * PLOT + 15));
   const rng = rngFrom(`${session.id}:${state.nextObjectId ?? 0}:forest`);
   for (let attempt = 0; attempt < 6; attempt++) {
@@ -1087,6 +1287,15 @@ async function cityJob(session) {
 
 /** What the session should be working on now (economy off: one house after another, as always). */
 async function chooseJob(session) {
+  // Nothing to do (the town is complete for now): ask again in a while, not four times a second.
+  const r = rt(session);
+  if (Date.now() < (r.jobRetryAt ?? 0)) return null;
+  const job = await chooseJobNow(session);
+  if (!job) r.jobRetryAt = Date.now() + 20000;
+  return job;
+}
+
+async function chooseJobNow(session) {
   if (!economy()) {
     if (!session.plotKey || state.plots[session.plotKey]?.done) await assignPlot(session);
     return `plot:${session.plotKey}`;
@@ -1097,6 +1306,15 @@ async function chooseJob(session) {
   if (!home.done) return `plot:${home.key}`;
   const target = targetStage(session);
   if ((home.stage ?? 2) < target) {
+    // Generators without stages build the full house at stage 1 already: stage 2 is the same list, so
+    // the house just moves on silently (no rebuild walk, no fireworks for nothing). Stage 3 adds the yard.
+    const same = home.gen === gens.current && hashList(stagedList(gens.currentModule, { ...home, stage: target }) ?? []) === home.bp;
+    if (same) {
+      home.stage = target;
+      save();
+      log(`Plot ${home.key}: stage ${target} is the same building, nothing to add`);
+      return publicJob(session);
+    }
     // Grow the house by diff: old stage -> new stage, nothing is demolished.
     await holdArea(`upgrade:${session.id}`, plotRect(state.city, home.cell), 10000);
     if (await migratePlot(home, { gen: home.gen, stage: home.stage ?? 2, placed: home.total, bp: home.bp }, target)) return `plot:${home.key}`;
@@ -1122,9 +1340,15 @@ async function work(session, dt) {
   }
   if (session.active && silentMin > config.idleAfterMinutes) session.active = false;
   if (!session.job) {
-    if (!session.active) return; // a chat gets work with its first real prompt
+    if (!session.active && !builders.owes(session)) return; // a chat gets work with its first real prompt (or offline backlog)
     session.job = await chooseJob(session);
-    if (!session.job) return;
+    if (!session.job) {
+      // Nothing left to build right now (economy: the town is complete): the chat still works, so the
+      // features that follow it (status line, chimney, lights…) keep running where its builder stands.
+      const here = siteOf(session.at);
+      if (here) await features.emit('onWork', session, here, dt);
+      return;
+    }
     save();
   }
   let site = siteOf(session.job);
@@ -1146,6 +1370,52 @@ async function work(session, dt) {
   const built = await siteBuilt(site);
   const rec = site.rec;
   if (session.active) contribution(rec, session).activeSec += dt;
+  // Books one index of the build list: 'placed' spends credit, 'skip' (already right / kept) is free.
+  let mine = null;
+  const commit = (kind) => {
+    rec.placed++;
+    if (kind !== 'placed') return;
+    session.credit -= 1;
+    session.blocks = (session.blocks ?? 0) + 1;
+    (mine ??= contribution(rec, session)).blocks++;
+  };
+  if (builders.owes(session)) {
+    // Engine "offline": blocks earned while the server was off are placed now (timelapse or instant).
+    if (session.pose !== 'catching-up') {
+      await ensureBuilder(session, site);
+      await setPose(session, 'standing');
+      session.pose = 'catching-up';
+    }
+    let owedMine = null;
+    await builders.catchUp(session, site, built, dt, (kind) => {
+      rec.placed++;
+      if (kind !== 'placed') return;
+      session.backlog -= 1;
+      session.blocks = (session.blocks ?? 0) + 1;
+      (owedMine ??= contribution(rec, session)).blocks++;
+    });
+    save();
+    if (rec.placed >= built.list.length) {
+      if (site.obj) await finishObject(session, site.obj);
+      else await finishPlot(session, site.plot);
+      return;
+    }
+    if (!session.active) {
+      await updateScore(session, site);
+      return;
+    }
+  }
+  const builder = body(session);
+  if (builder.sync) {
+    // A bot builds asynchronously: book what it finished (also while the chat is idle — it completes its block).
+    await builder.sync(session, site, built, commit);
+    if (rec.placed >= built.list.length) {
+      save();
+      if (site.obj) await finishObject(session, site.obj);
+      else await finishPlot(session, site.plot);
+      return;
+    }
+  }
 
   if (!session.active) {
     session.credit = Math.min(session.credit, 40);
@@ -1167,38 +1437,9 @@ async function work(session, dt) {
     session.pose = 'standing';
   }
   session.credit = Math.min(session.credit + config.blocksPerSecond * dt, 200);
-  const { list, skip } = built;
-  const tag = builderTag(session);
-  const mine = contribution(rec, session);
-  let n = features.every('canBuild', session, site) ? Math.min(Math.floor(session.credit), config.maxBlocksPerTick) : 0;
-  let freeSkips = 400; // blocks that are already right cost nothing, but keep one tick bounded
-  while (n-- > 0 && rec.placed < list.length) {
-    if (skip?.has(rec.placed)) {
-      rec.placed++; // already standing from before the generators (or the stage) changed
-      n++;
-      continue;
-    }
-    const b = list[rec.placed];
-    const out = await cmd(`setblock ${b.x} ${b.y} ${b.z} ${b.block}`);
-    if (out.includes('not loaded')) break; // chunk still loading: retry next tick
-    if (out.startsWith('Could not set') && freeSkips-- > 0) {
-      // Identical block already there (lawn, ground, parts kept from before): no walk, no time spent.
-      rec.placed++;
-      n++;
-      continue;
-    }
-    rec.placed++;
-    session.credit -= 1;
-    session.blocks = (session.blocks ?? 0) + 1;
-    mine.blocks++;
-    if (rec.placed % 3 === 0) {
-      await cmd(`tp @e[tag=${tag},limit=1] ${b.x + 0.5} ${b.y + 1} ${b.z + 0.5} ${[0, 90, 180, 270][rec.placed % 4]} 20`);
-      Object.assign(rt(session), { pos: [b.x + 0.5, b.y + 1, b.z + 0.5], posAt: site.key }); // for the web map
-      await cmd(`particle minecraft:happy_villager ${b.x + 0.5} ${b.y + 0.7} ${b.z + 0.5} 0.3 0.3 0.3 0 2`);
-      await cmd(`playsound minecraft:${soundFor(b.block)} block @a ${b.x} ${b.y} ${b.z} 0.5 1`);
-    }
-    if (rec.placed % 12 === 1) await setHand(session, features.first('handItem', session, b) ?? itemFor(b.block));
-  }
+  const { list } = built;
+  const n = features.every('canBuild', session, site) ? Math.min(Math.floor(session.credit), config.maxBlocksPerTick) : 0;
+  await body(session).build(session, site, built, n, commit); // mannequin: setblock loop; bot: job + limit, booked by sync()
   save();
   if (rec.placed >= list.length) {
     if (site.obj) await finishObject(session, site.obj);
@@ -1213,7 +1454,7 @@ async function work(session, dt) {
 
 const renovator = new Renovator({
   state: () => state,
-  gens, cmd, log, save, chunks, PLOT, hashList, textJson, labelOf, releaseLater, builderTag,
+  gens, cmd, log, save, chunks, PLOT, hashList, textJson, labelOf: typeLabel, releaseLater, builderTag,
   plotRect: (cell) => plotRect(state.city, cell),
   listWith: (mod, plot) => stagedList(mod, plot),
   newList: (plot) => {
@@ -1232,30 +1473,52 @@ const renovator = new Renovator({
   announce,
 });
 
+// Infrastructure crew (quays, piers, lanes, bridges, the harbour): builds while chats work, like renovation.
+const infraWorks = new InfraWorks({
+  state: () => state, cmd, log, save, chunks, releaseLater, announce,
+  enabled: (rec) => settings.on(rec.renovation ? 'shore-renovation' : rec.type === 'bridge' ? 'river-bridges' : ['lane', 'viewpoint'].includes(rec.type) ? 'adaptive-terrain' : 'waterfront'),
+  rate: () => (Object.values(state.sessions).some((s) => s.active && !s.retired) ? config.infraBlocksPerSecond ?? 4 : 0),
+});
+
+/** Additive migration (once per infra version): quays and piers where existing plots meet the water. */
+async function shoreRenovation() {
+  if (!settings.on('shore-renovation') || !state.city || state.city.pending) return;
+  const T = terrainState(state);
+  if (T.shoreRenovated === INFRA_VERSION || T.shoreRenovationAt > Date.now() - 600000) return;
+  T.shoreRenovationAt = Date.now();
+  await terrainSurvey([]);
+  const made = planShoreRenovation(infraCtx());
+  log(`Shore renovation: ${made.length} pieces planned`);
+  save();
+}
+
 const peakSurvey = new PeakSurvey({ state: () => state, cmd, log, save, holdOwner, releaseLater, PLOT });
 
 // ------------------------------------------------------------------ players
 
 const knownPlayers = new Set();
 async function pollPlayers() {
-  const out = await cmd('list');
-  const names = (out.split(':')[1] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  // `list uuids` prints plain names ("Name (uuid)"); plain `list` prints display names, and a live builder's
+  // team prefix (the chat's name) could contain ',' or ':' and look like extra players.
+  const out = await cmd('list uuids');
+  // Live builders (realistic mode) are players too, but never get op, welcome lines, advancements, the map's player list…
+  const names = (out.includes(':') ? out.slice(out.indexOf(':') + 1) : '').split(',').map((s) => s.trim().replace(/\s*\([0-9a-f-]{32,36}\)$/i, '')).filter((n) => n && !isBotName(n));
   for (const name of names) {
     if (knownPlayers.has(name) || !/^\w{1,16}$/.test(name)) continue;
     knownPlayers.add(name);
     await cmd(`op ${name}`);
-    await cmd(`tellraw ${name} ${JSON.stringify({ text: `Добро пожаловать в ${config.cityName}! Каждый чат с Claude — строитель в твоём городе.`, color: 'gold' })}`);
+    await cmd(`tellraw ${name} ${JSON.stringify({ text: t('bridge.welcome', { city: config.cityName }), color: 'gold' })}`);
     const url = `http://127.0.0.1:${config.port}/`;
-    await cmd(`tellraw ${name} ${JSON.stringify([{ text: '  ⚙ ', color: 'gray' }, { text: '[настройки]', color: 'aqua', click_event: { action: 'open_url', url }, hover_event: { action: 'show_text', value: url } }, { text: '  что показывать в мире: пресеты и переключатели', color: 'gray' }])}`);
+    await cmd(`tellraw ${name} ${JSON.stringify([{ text: '  ⚙ ', color: 'gray' }, { text: t('bridge.welcome.settings'), color: 'aqua', click_event: { action: 'open_url', url }, hover_event: { action: 'show_text', value: url } }, { text: `  ${t('bridge.welcome.settingsHint')}`, color: 'gray' }])}`);
     if (state.city && !state.city.pending) {
       const go = (label, color, x, y, z, note) =>
         cmd(`tellraw ${name} ${JSON.stringify([{ text: '  → ', color: 'gray' }, { text: label, color, click_event: { action: 'run_command', command: `/tp @s ${x} ${y} ${z}` } }, { text: note, color: 'gray' }])}`);
       const centre = state.plots['0,0'];
-      await go(config.cityName, 'gold', state.city.cx, (centre?.y ?? state.city.baseY) + 2, state.city.cz + 7, '  (центр)');
+      await go(config.cityName, 'gold', state.city.cx, (centre?.y ?? state.city.baseY) + 2, state.city.cz + 7, `  (${t('bridge.welcome.centre')})`);
       for (const d of Object.values(state.districts)) {
         const p = state.plots[d.cells[0]];
         if (!p || d.pending) continue;
-        await go(d.name, 'yellow', p.x0 + 10, p.y + 2, p.z0 + 10, `  (${d.buildingsDone} домов)`);
+        await go(d.name, 'yellow', p.x0 + 10, p.y + 2, p.z0 + 10, `  (${t('common.houses', { count: d.buildingsDone })})`);
       }
     }
     await features.emit('onPlayerJoin', name);
@@ -1328,7 +1591,7 @@ function onEvent(raw) {
   if (!s) {
     const where = districtFor(typeof raw.cwd === 'string' ? raw.cwd : '');
     s = state.sessions[id] = {
-      id, name: `Чат ${id.slice(0, 4)}`, named: false, districtKey: where.key, districtName: where.name,
+      id, name: tOr('bridge.chat.unnamed', 'Chat {id}', { id: id.slice(0, 4) }), named: false, // (`t` is the event time here) districtKey: where.key, districtName: where.name,
       skin: SKINS[parseInt(id.replace(/[^0-9a-f]/gi, '').slice(0, 6) || '0', 16) % SKINS.length],
       active: false, ended: false, retired: false, credit: 0, plotKey: null, createdAt: Date.now(), lastEvent: Date.now(),
     };
@@ -1478,7 +1741,7 @@ const ctx = {
   district: (key) => (key ? state.districts[key] : null),
   plazaOf: (district) => (district ? state.plots[cellKey(district.seed)] : null),
   square: () => state.plots['0,0'],
-  textJson, snbt, cleanText, announce, itemFor, labelOf,
+  textJson, snbt, cleanText, announce, itemFor, labelOf: typeLabel,
   tellraw: (target, parts) => cmd(`tellraw ${target} ${JSON.stringify([{ text: '' }, ...parts])}`),
   /** Force-loads `r` for `ms` (e.g. while a temporary mob plays), then lets it go. */
   holdArea, holdOwner, releaseLater,
@@ -1493,16 +1756,57 @@ const ctx = {
   toolCategory,
   players: () => [...knownPlayers],
   port: () => config.port,
+  /** Sends the builder over to another site (life features: home to bed, to the café after work). */
+  moveTo: (session, site) => moveTo(session, site),
 };
 
 const features = new FeatureHost(FEATURES, ctx, log);
+// Labels and descriptions come from the catalogs: `param.<key>.label` / `param.<key>.desc`
+// (and `param.<key>.option.<value>` for choices); an inline label is only the fallback.
 const PARAMS = [
-  { key: 'houseAfterActions', label: 'Действий до своего дома', description: 'Экономика чатов: до этого числа действий чат ставит скамейки, деревья и фонтаны на площади квартала.', min: 0, max: 1000 },
-  { key: 'stageActions.0', label: 'Действий до 2-го этапа дома', description: 'Дом растёт: маленький дом → полный дом.', min: 1, max: 5000 },
-  { key: 'stageActions.1', label: 'Действий до 3-го этапа дома', description: 'Полный дом → пристройка и двор; после этого чат строит общественное.', min: 1, max: 10000 },
-  { key: 'blocksPerSecond', label: 'Скорость стройки, блоков/с', description: 'Пока чат работает (плюс бонус за каждое действие).', min: 0.5, max: 40, step: 0.5 },
-  { key: 'renovateBlocksPerSecond', label: 'Скорость ремонта, блоков/с', description: 'Бригада ремонта, пока работает хоть один чат.', min: 0, max: 40, step: 0.5 },
+  { key: 'houseAfterActions', min: 0, max: 1000 },
+  { key: 'stageActions.0', min: 1, max: 5000 },
+  { key: 'stageActions.1', min: 1, max: 10000 },
+  { key: 'blocksPerSecond', min: 0.5, max: 40, step: 0.5 },
+  { key: 'renovateBlocksPerSecond', min: 0, max: 40, step: 0.5 },
+  // Builders mode (bridge/builders): fast mannequins or realistic walking bots. (Colonists live in wild/.)
+  { key: 'builderMode', label: 'Builders', options: BUILDER_MODES.map((m) => [m, m]) },
+  { key: 'builderBotsMax', label: 'Live builders at most', min: 0, max: 20 },
+  { key: 'botSpeed', label: 'Live builder pace', options: BOT_SPEEDS.map((m) => [m, m]) },
+  { key: 'offlineCatchUp', label: 'Offline catch-up', options: CATCH_UP.map((m) => [m, m]) },
+  { key: 'colonists', label: 'Colonists', options: [['off', 'off'], ['on', 'on']] },
+  { key: 'colonistsMax', label: 'Colonists at most', min: 0, max: 16 },
+  { key: 'colonistsCaretaker', label: 'Caretaker colonist', options: [['off', 'off'], ['on', 'on']] },
+  ...FEATURE_PARAMS, // life density (features/citylife.mjs)
 ];
+
+/**
+ * The language was switched (settings page, configure.mjs, config.json): refresh the texts the bridge
+ * caches in the world. Sidebar lines are rebuilt on the next tick, unnamed builders get their name in
+ * the new language, features re-render their own displays (onLanguage), the data pack is regenerated.
+ */
+function onLanguageSwitch(lang) {
+  renovator.sidebarKey = null; // the renovation line of the sidebar is redrawn too
+  for (const s of Object.values(state.sessions)) s.scoreKey = null;
+  renameUnnamed();
+  features.emitSync('onLanguage', lang);
+  if (rcon.connected && (settings.on('advancements') || settings.on('townHall'))) {
+    ensureDatapack(ctx).catch((err) => log(`data pack (language ${lang}): ${err.message}`));
+  }
+}
+/** Builders without a name yet are "Chat 1a2b" in the current language (also fixes names saved by older versions). */
+function renameUnnamed() {
+  let changed = false;
+  for (const s of Object.values(state.sessions)) {
+    const name = t('bridge.chat.unnamed', { id: s.id.slice(0, 4) });
+    if (s.named || s.name === name) continue;
+    s.name = name;
+    s.scoreKey = null;
+    changed = true;
+    if (!s.retired) fx.push(`data merge entity @e[tag=${builderTag(s)},limit=1] {CustomName:${textJson(s.name)}}`, { key: `name:${s.id}` });
+  }
+  if (changed) save();
+}
 const routes = {};
 for (const f of FEATURES) for (const [k, fn] of Object.entries(f.routes ?? {})) routes[k] = (body) => fn(ctx, body);
 const settings = new Settings({
@@ -1517,14 +1821,45 @@ const settings = new Settings({
     log(`Features: ${changes.map((c) => `${c.id} ${c.on ? 'on' : 'off'}`).join(', ')}`);
     for (const c of changes) features.toggle(c.id, c.on);
   },
+  onLanguage: (lang) => onLanguageSwitch(lang),
 });
 features.settings = settings;
+renameUnnamed();
 settings.watch();
 log(`Preset ${settings.preset}: ${FEATURES.filter((f) => settings.on(f.id)).map((f) => f.id).join(', ') || 'no extras'}`);
 
+// Builder backends: mode 1 mannequins, mode 2 live bots (bots/runner.mjs, started on demand), mode 3 seam.
+builders = new Builders({
+  root: ROOT, config, props, log, cmd, rt, builderTag, builderUuid, textJson, itemFor, soundFor, setHand, save,
+  smooth: () => settings.on('smoothBuilders'),
+  handItem: (s, b) => features.first('handItem', s, b),
+  onSpawn: (s, site) => {
+    rt(s).hand = null;
+    return features.emit('onBuilderSpawn', s, site);
+  },
+  sessions: () => Object.values(state.sessions).filter((s) => !s.retired),
+  session: (id) => (Object.hasOwn(state.sessions, id) ? state.sessions[id] : null),
+  siteOf,
+  sleeping: (s) => !s.active && (Date.now() - s.lastEvent) / 60000 > config.sleepAfterMinutes,
+  plazaFront: (s) => {
+    const d = state.districts[s.districtKey];
+    const plaza = d && state.plots[cellKey(d.seed)];
+    return plaza ? siteOf(`plot:${plaza.key}`)?.front ?? null : null;
+  },
+  /** Where a sleeping builder lies: the head of a bed already built in its own house. */
+  bedSpot: (s) => {
+    const home = s.plotKey && state.plots[s.plotKey];
+    if (!home || home.type === 'park') return null;
+    const { list } = buildList(home);
+    const upTo = home.done ? list.length : home.placed;
+    const i = list.findIndex((b, k) => k < upTo && /_bed\[/.test(b.block) && b.block.includes('part=head'));
+    return i < 0 ? null : [list[i].x, list[i].y + 0.56, list[i].z];
+  },
+});
+
 // Live web map at /map (bridge state only; RCON just for its teleport / follow buttons).
 const mapPage = new MapPage({
-  state: () => state, config, rt, siteOf, labelOf, cmd, builderSel: ctx.builderSel, gens, renovator, log,
+  state: () => state, config, rt, siteOf, labelOf: typeLabel, cmd, builderSel: ctx.builderSel, gens, renovator, log,
   players: () => [...knownPlayers],
   connected: () => rcon.connected,
 });
@@ -1540,7 +1875,11 @@ async function tick() {
   if (busy) return;
   busy = true;
   try {
-    if (!rcon.connected && !(await connect())) return;
+    if (!rcon.connected && !(await connect())) {
+      builders.offlineTick(Date.now()); // engine "offline": the chats' work becomes a backlog for later
+      return;
+    }
+    builders.onlineTick();
     const now = Date.now();
     const dt = Math.min((now - lastTick) / 1000, 2);
     lastTick = now;
@@ -1555,10 +1894,18 @@ async function tick() {
     }
     try {
       await renovator.step(dt, config.maxRenovatePerTick);
+      await infraWorks.step(dt, config.maxRenovatePerTick);
+      await shoreRenovation();
       await peakSurvey.step();
     } catch (err) {
       if (err instanceof RconDisconnected) throw err;
       log(`renovation/survey: ${err.stack ?? err.message}`);
+    }
+    try {
+      await builders.tick(now); // live-builder pool (realistic mode)
+    } catch (err) {
+      if (err instanceof RconDisconnected) throw err;
+      log(`builders: ${err.stack ?? err.message}`);
     }
     await features.emit('onTick', now, dt);
     await fx.drain(config.effectsPerTick);
@@ -1578,6 +1925,17 @@ async function tick() {
   }
 }
 
+/** Wild mode: the same (already privacy-reduced) event goes to the colony too. Fire and forget, never awaited. */
+function forwardWild(body) {
+  if (config.colonists !== 'on' && config.builderMode !== 'wild') return;
+  try {
+    if (Date.now() - fs.statSync(config.wildHeartbeatFile).mtimeMs > 8000) return; // colony not running
+    const url = new URL(config.wildUrl);
+    if (!['127.0.0.1', 'localhost'].includes(url.hostname)) return;
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(800) }).catch(() => {});
+  } catch {}
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/event') {
     // Only local tools may post: browsers always send Origin, and the hook sends JSON.
@@ -1594,6 +1952,7 @@ const server = http.createServer((req, res) => {
     });
     req.on('end', () => {
       res.writeHead(204).end();
+      forwardWild(body);
       try {
         onEvent(JSON.parse(body));
       } catch (err) {
@@ -1616,6 +1975,7 @@ const server = http.createServer((req, res) => {
         return { name: s.name, district: s.districtName, active: s.active, waiting: rt(s).waiting?.kind ?? null, building: p ? `${p.type} ${p.placed}/${p.total} @${p.key}` : null };
       }),
       effectsQueued: fx.items.size,
+      builders: builders.info(),
     }, null, 2));
     return;
   }
@@ -1640,6 +2000,7 @@ setInterval(tick, 250);
 
 function shutdown() {
   if (saveTimer) clearTimeout(saveTimer);
+  builders?.shutdown(); // live bots leave the server with the bridge
   writeState();
   try {
     fs.unlinkSync(config.heartbeatFile);

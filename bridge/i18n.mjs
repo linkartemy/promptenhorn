@@ -39,8 +39,25 @@ function catalog(lang) {
 
 /** Switches the language used by t() (unknown codes fall back to English). Returns the active code. */
 export function setLanguage(lang) {
+  const before = current;
   current = Object.hasOwn(LANGUAGES, lang) ? lang : DEFAULT_LANGUAGE;
+  if (current !== before) {
+    for (const fn of listeners) {
+      try {
+        fn(current, before);
+      } catch {
+        // A broken listener must not stop the switch (or the others).
+      }
+    }
+  }
   return current;
+}
+
+const listeners = new Set();
+/** Calls fn(lang, previous) after every actual language switch (e.g. to refresh cached in-game texts). */
+export function onLanguageChange(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
 }
 
 export const language = () => current;
@@ -71,5 +88,62 @@ export function t(key, params = {}, lang = current) {
     return c[key];
   };
   const text = lookup(lang) ?? lookup(DEFAULT_LANGUAGE) ?? key;
-  return text.replace(/\{(\w+)\}/g, (m, name) => (params[name] != null ? String(params[name]) : m));
+  return fill(text, params);
 }
+
+const fill = (text, params) => text.replace(/\{(\w+)\}/g, (m, name) => (params[name] != null ? String(params[name]) : m));
+
+/**
+ * t() for Minecraft text components (tellraw, signs): returns [{text}, …] in the translated word order.
+ * A param given as an object ({text, color, click_event…}) becomes its own component; plain params are
+ * filled in as text.  tParts('bridge.done.house', { name: { text: s.name, color: 'yellow' }, what })
+ */
+export function tParts(key, params = {}, lang = current) {
+  const plain = {};
+  const parts = {};
+  for (const [k, v] of Object.entries(params)) (v && typeof v === 'object' ? parts : plain)[k] = v;
+  const text = t(key, plain, lang);
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(/\{(\w+)\}/g)) {
+    const part = parts[m[1]];
+    if (!part) continue;
+    if (m.index > last) out.push({ text: text.slice(last, m.index) });
+    out.push({ ...part, text: String(part.text ?? '') });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+/** True when `key` (or a plural form of it) exists in the language's catalog or in English. */
+export function has(key, lang = current) {
+  const known = (l) => {
+    const c = catalog(l);
+    return c[key] != null || c[`${key}.other`] != null;
+  };
+  return known(lang) || known(DEFAULT_LANGUAGE);
+}
+
+/**
+ * Like t(), but returns `fallback` (with params filled) when the key exists in no catalog. For texts
+ * whose owner still keeps an inline label (feature metadata, building types) while keys are added.
+ */
+export function tOr(key, fallback, params = {}, lang = current) {
+  return has(key, lang) ? t(key, params, lang) : fill(String(fallback ?? key), params);
+}
+
+/**
+ * Every key starting with one of `prefixes`, translated into `lang` (English where missing), raw
+ * (placeholders unfilled): handed to the browser pages, which fill them with their own small t().
+ */
+export function strings(prefixes, lang = current) {
+  const out = {};
+  for (const l of [DEFAULT_LANGUAGE, lang]) {
+    for (const [k, v] of Object.entries(catalog(l))) if (prefixes.some((p) => k.startsWith(p))) out[k] = v;
+  }
+  return out;
+}
+
+/** BCP 47 tag for the html lang attribute and Intl formatting (zh -> zh-Hans). */
+export const htmlLang = (lang = current) => (lang === 'zh' ? 'zh-Hans' : lang);

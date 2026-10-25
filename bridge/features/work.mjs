@@ -49,9 +49,9 @@ async function setFlag(ctx, plot, color) {
 
 const tests = {
   id: 'tests',
-  group: 'Работа Claude',
-  label: 'Тесты: искры и тучка',
-  description: 'Тесты прошли — зелёные искры и звон; упали — дым и красный флажок на фонаре; три падения подряд — тучка с дождиком над домом.',
+  group: 'claude',
+  label: 'Tests: sparks and a rain cloud',
+  description: 'Tests passed: green sparks and a chime; failed: smoke and a red flag on the lamp post; three failures in a row: a little rain cloud over the house.',
   presets: ['basic'],
   always: ['onFinish', 'onRetire'],
   onEvent(ctx, s, ev) {
@@ -98,9 +98,9 @@ const tests = {
 
 const commits = {
   id: 'commits',
-  group: 'Работа Claude',
-  label: 'Коммит = колокол',
-  description: 'Удачный git commit: один удар колокола церкви квартала (или на площади) и «+1 commit», тающий над строителем.',
+  group: 'claude',
+  label: 'Commit = church bell',
+  description: 'A successful git commit: one strike of the district church bell (or on the square) and a "+1 commit" fading above the builder.',
   presets: ['basic'],
   onEvent(ctx, s, ev) {
     if (ev.kind !== 'PostToolUse' || !ev.ok || !ev.kinds.includes('commit')) return;
@@ -146,9 +146,9 @@ function busRoute(ctx, from, to) {
 let busSeq = 0;
 const push = {
   id: 'push',
-  group: 'Работа Claude',
-  label: 'Push = ПостАвто',
-  description: 'git push: жёлтый автобус ПостАвто едет по улицам от дома до площади квартала, с трёхтонным гудком.',
+  group: 'claude',
+  label: 'Push = PostAuto',
+  description: 'git push: the yellow PostAuto bus drives through the streets from the house to the district square, with its three-tone horn.',
   presets: [],
   onEvent(ctx, s, ev) {
     if (ev.kind !== 'PostToolUse' || !ev.ok || !ev.kinds.includes('push')) return;
@@ -203,9 +203,9 @@ const patternsSnbt = (pats) => `[${pats.map(([p, c]) => `{pattern:"minecraft:${p
 
 const pr = {
   id: 'pr',
-  group: 'Работа Claude',
-  label: 'PR = флаг кантона',
-  description: 'gh pr create: на флагштоке площади квартала поднимается флаг нового кантона.',
+  group: 'claude',
+  label: 'PR = canton flag',
+  description: 'gh pr create: a new canton\'s flag is raised on the flagpole of the district square.',
   presets: ['basic'],
   onEvent(ctx, s, ev) {
     if (ev.kind !== 'PostToolUse' || !ev.ok || !ev.kinds.includes('pr')) return;

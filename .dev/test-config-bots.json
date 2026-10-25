@@ -1,0 +1,30 @@
+{
+  "port": 7781,
+  "serverDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-server",
+  "stateFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-state-bots.json",
+  "heartbeatFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-heartbeat-bots",
+  "archiveDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-archive-bots",
+  "blocksPerSecond": 10,
+  "maxBlocksPerTick": 30,
+  "resetForceloadsOnStart": false,
+  "searchOrigin": [
+    40000,
+    0
+  ],
+  "preset": "basic",
+  "features": {
+    "callout": true,
+    "status": true,
+    "toolInHand": true,
+    "apprentices": true,
+    "smoothBuilders": true
+  },
+  "renovateHelperBlocksPerSecond": 10,
+  "renovateBlocksPerSecond": 10,
+  "maxRenovatePerTick": 30,
+  "builderMode": "realistic",
+  "botSpeed": "normal",
+  "idleAfterMinutes": 1,
+  "sleepAfterMinutes": 10,
+  "builderBotsMax": 3
+}

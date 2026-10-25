@@ -59,7 +59,9 @@ Setting `builderMode: realistic` (settings page: Builders). Code: `bridge/builde
 | Renovation helper (an idle bot walks to the changes and swings while the crew sets them) | done | Staged renovation: helper visits counted |
 | Physics desync on Paper (bots freezing in 1-block dips) | fixed | Root cause: the client box stops exactly at a wall, Paper's float-width box then overlaps by ~1e-8 and the move is refused (CLIPPED_INTO_BLOCK). Client half width 0.3001: 0 resets on the dip course (`bots/physics-test.mjs`), against 2–549 per run before |
 | Smooth motion for mannequins (feature `smoothBuilders`) | behind a flag | Server side verified (the mannequin rides the display at the right height and turns to the next block); the client-side glide was not checked with a game client |
-| Real server restart with live bots | not verified | Reconnect and RCON re-connect are in place (kick test passes); the shared test server was not restarted |
+| Server outage with live bots | done (simulated) | Game port and RCON behind switchable proxies (`bots/rcon-proxy.mjs`), 45 s outage: the bridge reconnects, all 3 bots rejoin (back-off up to 12 tries, ~4 min, then a mannequin) and carry on. A real restart of the shared test server was not done |
+| Builders engine "offline" (`builderMode: offline`, `bridge/builders/offline.mjs`) | done | RCON behind a proxy switched off: 2 chats earned 1660 blocks offline, the backlog survived a bridge restart, the map showed it hatched; back online the timelapse placed it in ~60 s (`offlineTimelapseSeconds: 60`); `instant` finished a church and started the next house in one go; `node bots/verify.mjs`: 0 mismatches |
+| Offline: writing blocks straight into region files while the server is off | not started | Needs correct heightmaps, light and block entities and must never race a running server; the backlog catch-up covers the need |
 
 ## Not started
 

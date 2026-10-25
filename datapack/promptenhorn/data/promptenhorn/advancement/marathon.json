@@ -5,10 +5,10 @@
       "id": "minecraft:spruce_log"
     },
     "title": {
-      "text": "Марафон"
+      "text": "Marathon"
     },
     "description": {
-      "text": "Один чат построил пять зданий"
+      "text": "One chat built five buildings"
     },
     "frame": "challenge",
     "show_toast": true,

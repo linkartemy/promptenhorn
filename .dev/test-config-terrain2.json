@@ -1,0 +1,18 @@
+{
+  "port": 7782,
+  "serverDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-server",
+  "stateFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-state-terrain2.json",
+  "heartbeatFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-heartbeat-terrain",
+  "archiveDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-archive-terrain",
+  "blocksPerSecond": 40,
+  "maxBlocksPerTick": 40,
+  "resetForceloadsOnStart": false,
+  "searchOrigin": [0, 40000],
+  "preset": "basic",
+  "features": { "adaptive-terrain": true, "waterfront": true, "river-bridges": true, "shore-renovation": true },
+  "renovateHelperBlocksPerSecond": 40,
+  "renovateBlocksPerSecond": 40,
+  "maxRenovatePerTick": 40,
+  "infraBlocksPerSecond": 60,
+  "language": "en"
+}

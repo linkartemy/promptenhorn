@@ -53,7 +53,7 @@ export const STORAGE_RESERVE = [
 /** Never sold or stored: trash the colonist simply drops (it despawns). */
 export const TRASH = /^(wheat_seeds|beetroot_seeds|pumpkin_seeds|melon_seeds|poisonous_potato|spider_eye|.*_sapling|stick_never|gravel_never)$/;
 export const KEEP_PERSONAL = [
-  [/_pickaxe$/, 1], [/_sword$/, 1], [/_axe$/, 1], [/_shovel$/, 1], [/^shield$/, 1], [/_helmet$|_chestplate$|_leggings$|_boots$/, 4],
+  [/_pickaxe$/, 1], [/_sword$/, 1], [/_axe$/, 1], [/_shovel$/, 1], [/_hoe$/, 1], [/^shield$/, 1], [/_helmet$|_chestplate$|_leggings$|_boots$/, 4],
   [/^cooked_|^bread$|^baked_potato$|^apple$|^carrot$|^sweet_berries$/, 16], [/^torch$/, 16], [/^dirt$|^cobblestone$|^cobbled_deepslate$/, 16],
   [/^stick$/, 4], [PLANKS, 8], [/^coal$|^charcoal$/, 4], [LOG, 4],
 ];
@@ -66,7 +66,8 @@ export const equipped = (bot, slot) => bot.inventory.slots[ARMOR_IDX[slot]] ?? n
 /** Best tool of a kind in the inventory ("pickaxe" | "sword" | "axe" | "shovel"); null if none. */
 export function bestTool(bot, kind) {
   let best = null;
-  for (const it of itemsOf(bot)) if (it.name.endsWith('_' + kind) && (!best || tierOf(it.name) > tierOf(best.name))) best = it;
+  const left = (i) => (i.maxDurability ? 1 - (i.durabilityUsed ?? 0) / i.maxDurability : 1);
+  for (const it of itemsOf(bot)) if (it.name.endsWith('_' + kind) && (!best || tierOf(it.name) > tierOf(best.name) || (tierOf(it.name) === tierOf(best.name) && left(it) > left(best)))) best = it;
   const held = bot.heldItem;
   if (held?.name.endsWith('_' + kind) && (!best || tierOf(held.name) > tierOf(best.name))) best = held;
   return best;
@@ -91,12 +92,5 @@ export function bestFood(bot, { allowRaw = false, allowBad = false } = {}) {
 }
 export const foodCount = (bot) => itemsOf(bot).filter((i) => FOOD[i.name] && !LAST_RESORT_FOOD.has(i.name)).reduce((s, i) => s + i.count, 0);
 
-/** Russian display names for chat lines. */
-export const RU = {
-  wooden_pickaxe: 'деревянная кирка', stone_pickaxe: 'каменная кирка', iron_pickaxe: 'железная кирка', diamond_pickaxe: 'алмазная кирка',
-  wooden_sword: 'деревянный меч', stone_sword: 'каменный меч', iron_sword: 'железный меч', stone_axe: 'каменный топор', iron_axe: 'железный топор',
-  wooden_axe: 'деревянный топор', shield: 'щит', iron_helmet: 'железный шлем', iron_chestplate: 'железный нагрудник', iron_leggings: 'железные поножи',
-  iron_boots: 'железные ботинки', furnace: 'печь', crafting_table: 'верстак', torch: 'факелы', iron_ingot: 'железо', raw_iron: 'железная руда',
-  coal: 'уголь', diamond: 'алмазы', cobblestone: 'булыжник', bread: 'хлеб', red_bed: 'кровать', white_bed: 'кровать',
-};
-export const ru = (name) => RU[name] ?? name.replace(/_/g, ' ');
+/** Localized item name for chat lines (locales: wild.item.<id>). */
+export { itemName as ru } from '../../wild/lines.mjs';

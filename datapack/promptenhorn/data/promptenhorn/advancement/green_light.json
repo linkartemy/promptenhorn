@@ -5,10 +5,10 @@
       "id": "minecraft:lime_dye"
     },
     "title": {
-      "text": "Зелёный свет"
+      "text": "Green light"
     },
     "description": {
-      "text": "Тесты прошли после трёх падений подряд"
+      "text": "Tests passed after three failures in a row"
     },
     "frame": "goal",
     "show_toast": true,

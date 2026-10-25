@@ -5,10 +5,10 @@
       "id": "minecraft:bell"
     },
     "title": {
-      "text": "Динь!"
+      "text": "Ding!"
     },
     "description": {
-      "text": "Первый коммит прозвенел в колокол"
+      "text": "The first commit rang the bell"
     },
     "frame": "task",
     "show_toast": true,

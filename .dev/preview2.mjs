@@ -220,10 +220,10 @@ function png({ W, H, img }) {
 }
 
 const [type, seed = 'a', out, scale = '9'] = process.argv.slice(2);
-const make = () => (type === 'square' ? square(rngFrom(seed)) : type === 'plaza' ? plaza(rngFrom(seed)) : BUILDINGS[type](rngFrom(`${seed}:${type}`)));
+const make = () => (type === 'square' ? square(rngFrom(seed)) : type === 'plaza' ? plaza(rngFrom(seed)) : BUILDINGS[type](rngFrom(`${seed}:${type}`), { ...(process.env.STAGE ? { stage: Number(process.env.STAGE) } : {}), ...(process.env.TERRAIN ? { terrain: JSON.parse(process.env.TERRAIN) } : {}) }));
 const bp = make();
-const front = bp.toBuildList({ turns: 0, size: 21, offset: 2 });
-const back = make().toBuildList({ turns: 2, size: 21, offset: 2 });
+const front = bp.toBuildList({ turns: 0, size: 21, offset: 2 }).filter((b) => !/^minecraft:(cave_)?air$/.test(b.block));
+const back = make().toBuildList({ turns: 2, size: 21, offset: 2 }).filter((b) => !/^minecraft:(cave_)?air$/.test(b.block));
 const s = Number(scale);
 const img = concat(concat(render(front, 21, s), render(back, 21, s)), elevation(front, Math.round(s * 1.6)));
 const file = out ?? `.dev/previews/${type}-${seed}.png`;
