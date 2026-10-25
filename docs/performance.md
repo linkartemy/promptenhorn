@@ -30,7 +30,12 @@ Sources: RCON (read-only: `tps`, `mspt`, `list`, `forceload query`, `paper chunk
 | Process | private 1 971 MB, working set 1 669 MB (≈ heap + 500 MB of metaspace, code cache, GC structures, threads) |
 | CPU | 2 379 CPU-s in ~3 h ≈ 22 % of one core on average |
 
-So the live server is far from its limits: an idle town needs ~0.5 GB of live heap and ~2–3 ms per tick.
+A few minutes later the user joined (1 player, view distance 16): 1 397 chunks (1 005 full, 290 entity-ticking),
+354 entities, 21 villagers with AI, MSPT 3.9–4.1 ms avg (max 12–17 ms), old generation 417 MB after a young
+collection, heap still committed at 1.43 GB.
+
+So the live server is far from its limits: the town needs ~0.5 GB of live heap and 2–4 ms per tick, with or
+without a player.
 `-Xmx3G` is a ceiling it never reached; the young generation simply grows into whatever it is allowed.
 
 ### Everything else on the machine at the same moment
@@ -76,7 +81,7 @@ server would stall it), `server-ip=127.0.0.1`, `spark` is installed for profilin
 
 | Setting | Now | Recommended | Why |
 |---|---|---|---|
-| `view-distance` | 16 | 12 (16 GB), 6 (8 GB), 16 (32 GB) | Paper loads the server's view distance around every player, whatever the client asks for: (2·16+1)² = 1 089 chunks per player vs 625 at 12. The biggest lever on server heap and on chunk generation when flying. The client sees the same distance, so lower it in the client too. |
+| `view-distance` | 16 | 12 (16 GB), 6 (8 GB), 16 (32 GB) | Paper loads the server's view distance around every player, whatever the client asks for: (2·16+1)² = 1 089 chunks per player vs 625 at 12. Measured here the heap copes with 16 (old gen ~0.4 GB with the player online), so the gain is mostly elsewhere: chunk loading and generation while flying, chunk sending, and the client, which renders min(its own, the server's) distance and is the second-largest RAM user on the machine. Lock it at 16 if the far view of the Matterhorn matters more. |
 | `simulation-distance` | 8 | 6 (4 / 8) | Entity-ticking area: 289 → 169 chunks. Villagers, animals and redstone beyond it freeze, buildings stay visible. |
 | `sync-chunk-writes` | true | false | `true` forces a synchronous flush per chunk write; Paper's own IO is safe without it (Aikar's recommendation). |
 | `network-compression-threshold` | 256 | -1 (only when `server-ip` is loopback) | Compression costs CPU on both ends and saves nothing on localhost. |

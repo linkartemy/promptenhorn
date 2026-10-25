@@ -145,6 +145,17 @@ node configure.mjs language de     # 更改语言
 
 为了提供进度成就和暂停菜单中的“镇政厅”按钮，bridge 会自行把 `datapack/promptenhorn` 数据包安装到 `server/world/datapacks/` 并重新加载数据包。暂停菜单按钮会在下次服务器重启后出现（对话框只在启动时加载）；聊天栏中的“[Town hall]”链接则立即可用。镇政厅窗口还可以在浏览器中打开实时地图。
 
+## 按电脑调优
+
+`node tools/tune.mjs` 会测量电脑（内存、CPU、正在运行的程序），并以只读方式测量运行中的服务器（TPS、MSPT、区块、实体），然后给出方案：启动脚本的 Java 内存与参数、`view-distance` / `simulation-distance`、Paper/Spigot/Bukkit 的 tick 优化，以及桥接的上限（`builderBotsMax`、`colonistsMax`、翻新速度、生活密度）。只有加上 `--apply` 才会写入，写入前每个文件都会备份到 `backups/tune/<时间>/`；之后重启服务器和桥接。
+
+```
+node tools/tune.mjs            # dry run
+node tools/tune.mjs --apply    # write the plan, then restart
+```
+
+参考：8 GB：`-Xmx1536M`，视距 6。16 GB：`-Xmx2560M`，视距 12，最多 4 个真实建造者和 3 个殖民者。32 GB：`-Xmx4G`，视距 16。要保留自己的值：在 `config.json` 中写 `"tuning": { "lock": ["server.view-distance"] }`。详情（英文）：[docs/performance.md](docs/performance.md)。
+
 ## 停止与卸载
 
 - 停止：在服务器窗口中输入 `stop`，然后关闭 bridge 窗口。

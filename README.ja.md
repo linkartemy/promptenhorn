@@ -145,6 +145,17 @@ node configure.mjs language de     # 言語を変更する
 
 進捗と、ポーズメニューの「町役場」ボタンのために、bridge は `datapack/promptenhorn` データパックを自動的に `server/world/datapacks/` にインストールし、データパックを再読み込みします。ポーズメニューのボタンは次回のサーバー再起動後に現れます（ダイアログは起動時にしか読み込まれないため）。チャットの「[Town hall]」リンクはすぐに使えます。町役場のウィンドウからは、ブラウザでライブマップを開くこともできます。
 
+## PC に合わせた調整
+
+`node tools/tune.mjs` はこの PC（メモリ、CPU、動いているもの）と、読み取り専用で動作中のサーバー（TPS、MSPT、チャンク、エンティティ）を測り、プランを表示します: 起動スクリプトの Java メモリとフラグ、`view-distance` / `simulation-distance`、Paper/Spigot/Bukkit の tick 削減、ブリッジの上限（`builderBotsMax`、`colonistsMax`、改修速度、暮らしの密度）。`--apply` を付けたときだけ書き込み、その前に各ファイルを `backups/tune/<時刻>/` に保存します。その後サーバーとブリッジを再起動してください。
+
+```
+node tools/tune.mjs            # dry run
+node tools/tune.mjs --apply    # write the plan, then restart
+```
+
+目安: 8 GB: `-Xmx1536M`、描画距離 6。16 GB: `-Xmx2560M`、描画距離 12、リアルな大工 4 人と入植者 3 人まで。32 GB: `-Xmx4G`、描画距離 16。自分の値を固定するには `config.json` に `"tuning": { "lock": ["server.view-distance"] }`。詳細（英語）: [docs/performance.md](docs/performance.md)。
+
 ## 停止とアンインストール
 
 - 停止するには：サーバーのウィンドウで `stop` と入力し、bridge のウィンドウを閉じます。

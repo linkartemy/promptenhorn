@@ -145,6 +145,17 @@ Détails pour les auteurs de générateurs : `docs/generator-contract.md`.
 
 Pour les progrès et le bouton « Hôtel de ville » du menu pause, le bridge installe lui-même le pack de données `datapack/promptenhorn` dans `server/world/datapacks/` et recharge les packs de données. Le bouton du menu pause apparaît après le prochain redémarrage du serveur (les dialogues ne sont chargés qu'au démarrage) ; le lien « [Hôtel de ville] » dans le chat fonctionne tout de suite. La fenêtre de l'hôtel de ville peut aussi ouvrir la carte en direct dans votre navigateur.
 
+## Réglage selon l'ordinateur
+
+`node tools/tune.mjs` mesure l'ordinateur (RAM, CPU, ce qui tourne) et, en lecture seule, le serveur en marche (TPS, MSPT, chunks, entités), puis affiche un plan : mémoire et options Java des scripts de démarrage, `view-distance` / `simulation-distance`, économies de ticks dans Paper/Spigot/Bukkit et limites du pont (`builderBotsMax`, `colonistsMax`, vitesse de rénovation, densité de vie). Rien n'est écrit sans `--apply` ; chaque fichier est d'abord copié dans `backups/tune/<heure>/`, puis redémarrez le serveur et le pont.
+
+```
+node tools/tune.mjs            # dry run
+node tools/tune.mjs --apply    # write the plan, then restart
+```
+
+Repères : 8 Go : `-Xmx1536M`, distance 6. 16 Go : `-Xmx2560M`, distance 12, jusqu'à 4 bâtisseurs réels et 3 colons. 32 Go : `-Xmx4G`, distance 16. Pour garder une valeur : `"tuning": { "lock": ["server.view-distance"] }` dans `config.json`. Détails (en anglais) : [docs/performance.md](docs/performance.md).
+
 ## Arrêt et désinstallation
 
 - Pour arrêter : tapez `stop` dans la fenêtre du serveur et fermez la fenêtre du bridge.

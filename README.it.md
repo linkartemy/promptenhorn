@@ -145,6 +145,17 @@ Dettagli per chi scrive generatori: `docs/generator-contract.md`.
 
 Per i progressi e il pulsante "Municipio" nel menu di pausa, il bridge installa da sé il pacchetto dati `datapack/promptenhorn` in `server/world/datapacks/` e ricarica i pacchetti dati. Il pulsante nel menu di pausa compare dopo il successivo riavvio del server (i dialoghi vengono caricati solo all'avvio); il link "[Municipio]" nella chat funziona subito. Dalla finestra del municipio si può anche aprire la mappa in tempo reale nel browser.
 
+## Regolazione sul computer
+
+`node tools/tune.mjs` misura il computer (RAM, CPU, cosa è in esecuzione) e, in sola lettura, il server avviato (TPS, MSPT, chunk, entità), poi mostra un piano: memoria e flag Java degli script di avvio, `view-distance` / `simulation-distance`, risparmi di tick in Paper/Spigot/Bukkit e i limiti del bridge (`builderBotsMax`, `colonistsMax`, velocità di ristrutturazione, densità di vita). Scrive solo con `--apply`, salvando prima ogni file in `backups/tune/<ora>/`; poi riavvia server e bridge.
+
+```
+node tools/tune.mjs            # dry run
+node tools/tune.mjs --apply    # write the plan, then restart
+```
+
+Indicazioni: 8 GB: `-Xmx1536M`, distanza 6. 16 GB: `-Xmx2560M`, distanza 12, fino a 4 costruttori reali e 3 coloni. 32 GB: `-Xmx4G`, distanza 16. Per bloccare un valore: `"tuning": { "lock": ["server.view-distance"] }` in `config.json`. Dettagli (in inglese): [docs/performance.md](docs/performance.md).
+
 ## Arresto e disinstallazione
 
 - Per fermare tutto: scrivi `stop` nella finestra del server e chiudi la finestra del bridge.

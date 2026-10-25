@@ -145,6 +145,17 @@ Details für Generator-Autoren: `docs/generator-contract.md`.
 
 Für die Fortschritte und die Schaltfläche "Rathaus" im Pausenmenü installiert die Bridge das Datenpaket `datapack/promptenhorn` selbst in `server/world/datapacks/` und lädt die Datenpakete neu. Die Schaltfläche im Pausenmenü erscheint nach dem nächsten Serverneustart (Dialoge werden nur beim Start geladen); der Link "[Rathaus]" im Chat funktioniert sofort. Aus dem Rathausfenster lässt sich auch die Live-Karte im Browser öffnen.
 
+## Abstimmung auf den Rechner
+
+`node tools/tune.mjs` misst den Rechner (RAM, CPU, was läuft) und – nur lesend – den laufenden Server (TPS, MSPT, Chunks, Entities) und zeigt einen Plan: Java-Speicher und -Flags der Startskripte, `view-distance` / `simulation-distance`, Tick-Einsparungen in Paper/Spigot/Bukkit und die Grenzen der Bridge (`builderBotsMax`, `colonistsMax`, Renovierungstempo, Lebensdichte). Erst mit `--apply` wird etwas geschrieben, jede Datei vorher nach `backups/tune/<Zeit>/` gesichert; danach Server und Bridge neu starten.
+
+```
+node tools/tune.mjs            # dry run
+node tools/tune.mjs --apply    # write the plan, then restart
+```
+
+Richtwerte: 8 GB: `-Xmx1536M`, Sichtweite 6. 16 GB: `-Xmx2560M`, Sichtweite 12, bis zu 4 Live-Bauleute und 3 Kolonisten. 32 GB: `-Xmx4G`, Sichtweite 16. Eigene Werte festhalten: `"tuning": { "lock": ["server.view-distance"] }` in `config.json`. Details (Englisch): [docs/performance.md](docs/performance.md).
+
 ## Beenden und Deinstallieren
 
 - Zum Beenden: `stop` im Serverfenster eingeben und das Bridge-Fenster schliessen.

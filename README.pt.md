@@ -145,6 +145,17 @@ Detalhes para autores de geradores: `docs/generator-contract.md`.
 
 Para as conquistas e o botão "Prefeitura" no menu de pausa, a ponte instala sozinha o pacote de dados `datapack/promptenhorn` em `server/world/datapacks/` e recarrega os pacotes de dados. O botão do menu de pausa aparece depois do próximo reinício do servidor (os diálogos só são carregados na inicialização); o link "[Town hall]" no chat funciona na hora. A janela da prefeitura também pode abrir o mapa ao vivo no seu navegador.
 
+## Ajuste ao computador
+
+`node tools/tune.mjs` mede o computador (RAM, CPU, o que está rodando) e, só lendo, o servidor em execução (TPS, MSPT, chunks, entidades), e mostra um plano: memória e flags Java dos scripts de início, `view-distance` / `simulation-distance`, economia de ticks no Paper/Spigot/Bukkit e os limites da ponte (`builderBotsMax`, `colonistsMax`, velocidade da reforma, densidade de vida). Só escreve com `--apply`, copiando antes cada arquivo para `backups/tune/<hora>/`; depois reinicie o servidor e a ponte.
+
+```
+node tools/tune.mjs            # dry run
+node tools/tune.mjs --apply    # write the plan, then restart
+```
+
+Referência: 8 GB: `-Xmx1536M`, distância 6. 16 GB: `-Xmx2560M`, distância 12, até 4 construtores reais e 3 colonos. 32 GB: `-Xmx4G`, distância 16. Para fixar um valor: `"tuning": { "lock": ["server.view-distance"] }` em `config.json`. Detalhes (em inglês): [docs/performance.md](docs/performance.md).
+
 ## Parar e desinstalar
 
 - Para parar: digite `stop` na janela do servidor e feche a janela da ponte.

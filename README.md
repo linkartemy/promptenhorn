@@ -141,9 +141,43 @@ When the building generators change, the town is not rebuilt from scratch. The b
 
 Details for generator authors: `docs/generator-contract.md`.
 
+## Builders: fast or realistic
+
+The **Builders** setting on the settings page (`builderMode` in `config.json`) picks how a chat's builder works:
+
+| Mode | What you see | Cost |
+|---|---|---|
+| `fast` (default) | A mannequin teleports along the house and the blocks appear by RCON, ~3 blocks/s plus bursts. With the feature "Smooth motion" the mannequin glides instead of jumping | almost nothing |
+| `realistic` | One real player (a bot) per active chat walks over from the district square, carries the block it is about to place, places it by hand with the right facing, half and axis, builds a dirt tower where it cannot reach and takes it down again. Blocks a player cannot place in one click (signs and banners with text, potted plants, filled cauldrons, unsupported overhangs, doors with the wrong hinge) are set by RCON while the bot looks at the spot and swings. When the house is done the whole list is read back and anything off is fixed, so the house matches the blueprint exactly. The bot waits at the door when the chat is idle, bobs and looks at you when the chat waits for your permission, says a short line now and then, and goes in to sleep (a sleeping mannequin lies in its bed) when the chat has been quiet for `sleepAfterMinutes` | one Node process for all bots: ~230 MB with 3 bots, ~10–35 % of one CPU core; each bot takes a player slot |
+
+Realistic mode needs the bot libraries once:
+
+```
+cd bots
+npm install
+```
+
+The bridge starts the bot runner (`bots/runner.mjs`) by itself when the mode is `realistic`, restarts it if it dies, and stops it when you switch back; `start.cmd` needs no change. The runner talks to the bridge only over the IPC channel of `child_process.fork` (no port) and has its own RCON connection.
+
+- `builderBotsMax` (default 3): at most this many bots at once; the other chats keep a mannequin until a bot is free (new bots also wait when the machine has less than `botMinFreeMemMB`, default 600 MB, free). Mind the server's `max-players`: every bot is a player.
+- `botSpeed`: `calm` (pauses between blocks, walks more), `normal`, `fast` (when a bot is far behind, blocks out of reach are set from where it stands while it swings).
+- Progress is still the bridge's build list and `plot.placed`: switching modes in the middle of a house carries on from the same block, progress % and renovation work as before, and a bot that was interrupted re-checks the last blocks. Bot names look like `Maurer_Noor` (a trade plus the chat's skin; offline-mode players get the default skin their name hashes to, and the name is chosen so it is the chat's skin); the chat's name is the nametag prefix and the status line its suffix. Bots never get op, welcome lines, advancements messages or a place in the map's player list.
+- Without `npm install` in `bots/`, or if a bot cannot join, the chat simply keeps its mannequin.
+
 ## Advancements and the town hall
 
 For advancements and the "Town hall" button in the pause menu, the bridge installs the `datapack/promptenhorn` data pack into `server/world/datapacks/` by itself and reloads data packs. The pause-menu button appears after the next server restart (dialogs are only loaded at startup); the "[Town hall]" link in the chat works right away. The town hall window can also open the live map in your browser.
+
+## Tuning
+
+`node tools/tune.mjs` looks at your computer (RAM, CPU, what is running) and, read-only, at the running server (TPS, MSPT, chunks, entities), then prints a plan: Java memory and flags for the start scripts, `view-distance` / `simulation-distance`, Paper/Spigot/Bukkit tick savings, and the bridge limits `builderBotsMax`, `colonistsMax`, renovation speed and life density. It changes nothing until you add `--apply`; then every file it touches is backed up to `backups/tune/<time>/`, and you restart the server and the bridge.
+
+```
+node tools/tune.mjs            # dry run
+node tools/tune.mjs --apply    # write the plan, then restart
+```
+
+Rough guide: 8 GB laptop: `-Xmx1536M`, view distance 6, fast builders. 16 GB: `-Xmx2560M`, view distance 12, up to 4 live builders and 3 colonists. 32 GB: `-Xmx4G`, view distance 16, up to 8 bots. Keep a value of your own with `"tuning": { "lock": ["server.view-distance"] }` in `config.json`. In Claude Code you can simply ask "tune the server" (the `promptenhorn-tune` skill). Measurements and every setting explained: [docs/performance.md](docs/performance.md).
 
 ## Stopping and uninstalling
 
@@ -169,7 +203,8 @@ For advancements and the "Town hall" button in the pause menu, the bridge instal
 | `hooks/alps-hook.mjs` | The Claude Code hook |
 | `install-hooks.mjs`, `configure.mjs` | Hook installer; settings from the terminal |
 | `datapack/` | Advancements and town hall data pack (`node datapack/build.mjs` rebuilds it) |
-| `bots/` | Experiment: real Mineflayer builder bots (separate `package.json`) |
+| `bridge/builders/` | Builder backends: mannequin (fast), bot (realistic), the router between them, bot names |
+| `bots/` | Realistic builders: the bot runner (`runner.mjs`, `worker.mjs`, `place.mjs`, physics fix) and dev tools (`physics-test.mjs`, `measure.mjs`, `verify.mjs`); separate `package.json` |
 | `docs/` | Generator contract, building standards, localization, roadmap |
 | `server/` | Paper 1.21.11: localhost only, offline-mode, peaceful, creative |
 | `state.json` | The town's state |

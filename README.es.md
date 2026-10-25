@@ -145,6 +145,17 @@ Detalles para autores de generadores: `docs/generator-contract.md`.
 
 Para los logros y el botón "Ayuntamiento" del menú de pausa, el puente instala por sí mismo el paquete de datos `datapack/promptenhorn` en `server/world/datapacks/` y recarga los paquetes de datos. El botón del menú de pausa aparece tras el siguiente reinicio del servidor (los diálogos solo se cargan al arrancar); el enlace "[Town hall]" del chat funciona al momento. La ventana del ayuntamiento también puede abrir el mapa en vivo en tu navegador.
 
+## Ajuste al equipo
+
+`node tools/tune.mjs` mide el equipo (RAM, CPU, qué está en marcha) y, solo leyendo, el servidor en marcha (TPS, MSPT, chunks, entidades), y muestra un plan: memoria y flags de Java de los scripts de inicio, `view-distance` / `simulation-distance`, ahorros de ticks en Paper/Spigot/Bukkit y los límites del puente (`builderBotsMax`, `colonistsMax`, velocidad de reforma, densidad de vida). Solo escribe con `--apply`, guardando antes cada archivo en `backups/tune/<hora>/`; luego reinicia el servidor y el puente.
+
+```
+node tools/tune.mjs            # dry run
+node tools/tune.mjs --apply    # write the plan, then restart
+```
+
+Orientación: 8 GB: `-Xmx1536M`, distancia 6. 16 GB: `-Xmx2560M`, distancia 12, hasta 4 constructores reales y 3 colonos. 32 GB: `-Xmx4G`, distancia 16. Para fijar un valor propio: `"tuning": { "lock": ["server.view-distance"] }` en `config.json`. Detalles (en inglés): [docs/performance.md](docs/performance.md).
+
 ## Detener y desinstalar
 
 - Para detenerlo: escribe `stop` en la ventana del servidor y cierra la ventana del puente.
