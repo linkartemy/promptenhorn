@@ -194,28 +194,37 @@ node tools/tune.mjs --apply    # write the plan, then restart
 
 Rough guide: 8 GB laptop: `-Xmx1536M`, view distance 6, fast builders. 16 GB: `-Xmx2560M`, view distance 12, up to 4 live builders and 3 colonists. 32 GB: `-Xmx4G`, view distance 16, up to 8 bots. Keep a value of your own with `"tuning": { "lock": ["server.view-distance"] }` in `config.json`. In Claude Code you can simply ask "tune the server" (the `promptenhorn-tune` skill). Measurements and every setting explained: [docs/performance.md](docs/performance.md).
 
-## Colonists (experimental survival colony)
+## Colonists mode
 
-Besides the builders of the town there is a second mode: **Colonists**. Every active chat also gets a colonist in a survival colony on its **own** Minecraft server. Colonists are real player bots (Mineflayer) with a scripted utility AI, no LLM and zero tokens: they chop wood, dig their own mine, craft and upgrade tools and armour (wood → stone → iron), smelt, fight monsters, farm wheat, hunt and cook, sleep in beds at night, die, come back for their things, keep a shared storage and sell surplus at the market. With the money the colony buys building blocks (calcite, copper, glass, terracotta…) and builds cabins by hand. The town is not affected: it keeps building as before.
+Besides the builders of the town there is a second mode: **Colonists**. Every active chat also gets a colonist in a survival colony on its **own** Minecraft server. Colonists are real player bots (Mineflayer) with a scripted utility AI, no LLM and zero tokens: they chop wood, dig their own mine, craft and upgrade tools and armour (wood → stone → iron), smelt, fight monsters, farm wheat, hunt and cook, loot chests of nearby ruins, die, come back for their things, keep a shared storage and sell surplus at the market. With the money the colony buys building blocks (calcite, copper, glass, terracotta…) and builds cabins by hand. The town is not affected: it keeps building as before.
 
 | Chat | Colonist |
 |---|---|
 | New chat with activity | A colonist joins the colony (name tag: colonist name · chat name) |
 | Claude works (tool calls) | The colonist works; bursts of tool calls give Haste (digs faster) |
-| Chat idle for 4 min | The colonist stays home and guards the plaza; after 30 min it goes to rest (disconnects) |
+| Chat idle for 4 min | The colonist stays home and guards the plaza; after 30 min it puts its things into storage and goes to rest (disconnects) |
 | Failing tests | Bad luck: Unluck and a short Slowness, a grumpy line |
 | Commit / push | Celebration (fireworks, jumping), a bonus for the colony till |
 | Subagent | A temporary helper colonist (if the pool allows) |
 | Edit/Write, Bash, Read/Grep | Preferred job: builder, miner, lumberjack |
 
-### Start
+### Start and stop
 
 ```
-node wild/setup.mjs        # once: creates wild-server/ (copies Paper from server/, new RCON password, port 25567)
-wild\start-wild.cmd        # starts the colony server and the colony (or: node wild/colony.mjs)
+node wild/setup.mjs        # once: creates wild-server/ (Paper copied from server/, own world, new RCON password, port 25567)
+wild\start-wild.cmd        # Windows: the colony server and the colony in two windows
+sh wild/start-wild.sh      # macOS / Linux: the same (Ctrl+C stops both)
 ```
 
-Then switch **Colonists** on at http://127.0.0.1:7777/ (parameter "Colonists": on) so the bridge forwards chat events to the colony; the bridge must be running, the colony only receives what the bridge already gets. Join the colony in Minecraft 1.21.11 at `127.0.0.1:25567` (survival; colonists greet you and send a clickable list with **[tp]** and **[follow]**; the sidebar shows every colonist with role, health, food and task). Colony status page: http://127.0.0.1:7785/ (JSON at `/status`). Stop the colony with `node wild/stop.mjs` (colonists leave, state is saved) and the server with `stop` in its window.
+`start-wild` runs `setup.mjs` itself the first time. Then switch **Colonists** on at http://127.0.0.1:7777/ (parameter "Colonists": on): the town's bridge must be running and forwards chat events to the colony. To stop: `node wild/stop.mjs` (every colonist first puts what it carries into storage, then the state is saved), then `stop` in the server window. `wild-server/`, `wild-state.json` and `wild-config.json` hold the world, the RCON password and the colony state; they are git-ignored. To start the colony over: stop it and delete `wild-server/colony*` and `wild-state.json`.
+
+### How many colonists
+
+One per active chat, up to `colonistsMax` (default 3) in the town's `config.json`; extra chats wait for a free place. Change it on the settings page ("Colonists at most"), let `node tools/tune.mjs --apply` (or `/promptenhorn-tune` in Claude Code) pick it for your computer, or override it with `colonistsMax` (the older name `maxColonists` works too) in `wild-config.json`. The colony re-reads it every 15 s: when the cap goes down, the extra colonists (helpers first, then the chats idle the longest) walk to storage, put everything away and leave. It also never starts a bot when free RAM would drop below `reserveFreeMB`.
+
+### Watching
+
+Join in Minecraft 1.21.11 at `127.0.0.1:25567`. You are made operator and placed above the plaza once, on your very first visit; after that nothing moves you except your own clicks. The colonists greet you with a clickable list: **[tp]** to a colonist, **[follow]** (spectator camera, `/spectate`), spectator / creative mode. **Tab** shows every colonist with chat, role, health and task; the **sidebar** is the colony's economy panel (day, food, wood, stone, iron, coal, till, deaths, construction). Status page: http://127.0.0.1:7785/ (JSON at `/status`). Only the players named in `spectators` of `wild-config.json` are treated this way (empty: everyone who joins; the server only listens on 127.0.0.1).
 
 ### Settings
 
@@ -235,11 +244,13 @@ Plan for: the colony server (Paper, `-Xmx2G`, typically 1.2–1.8 GB in use), th
 
 ### How the colony works
 
-- **Utility AI** (`bots/wild/brain.mjs`): candidate actions score their urgency from the colonist's needs (drowning 100, creeper without shield 95, low health 92, outnumbered 88, combat 80, hunger 55–85, recover items 75, kit 70, full bag 68, night 60–65, tool repair 52, upgrades 42–47, role work 30–40); the best one runs for a bounded time, then everything is re-evaluated. A reflex layer interrupts on danger and drowning, a watchdog on stuck actions.
+- **Utility AI** (`bots/wild/brain.mjs`): candidate actions score their urgency from the colonist's needs (drowning 100, creeper without shield 95, low health 92, outnumbered 88, combat 80, hunger 55–85, recover items 75, leaving 72, kit 70, full bag 68, sleep when needed 65–70, tool repair 52, upgrades 36–47, role work 30–48); the best one runs for a bounded time, then everything is re-evaluated. A reflex layer interrupts on danger and drowning, a watchdog on stuck actions.
 - **Roles** come from the colony's needs every 10 s: one builder while a house is affordable, a farmer (and a hunter with 3+ colonists) when food runs short, lumberjacks when wood is short, miners otherwise.
 - **Survival**: retreat to the lit plaza at low health and eat there; creepers are never fought without a shield (walled off in tunnels, fled from outside); eating starts at food ≤ 14; a standard kit (pickaxe, sword, axe, food, torches, blocks, armour) is refilled from storage; worn tools are replaced before they break; no swimming (frozen ponds), no digging next to water or lava, no digging straight down; stuck detection re-paths, re-centres and, as a last resort, calls the colonist home.
 - **Mines**: each colonist digs its own 1-wide staircase down from the plaza edge, levels out at ore depth, mines ores it sees and lights the tunnel with torches.
-- **Storage**: five chests by category (ores, food, wood, stone, misc; marker block behind each) are the single source of truth; surplus above the colony reserve goes to the **market chest** next to Märt the merchant and becomes credits ("Fr.").
+- **Storage**: five chests by category (ores, food, wood, stone, misc; marker block behind each) are the single source of truth; surplus above the colony reserve goes to the **market chest** next to Märt the merchant and becomes credits ("Fr."). Colonists check a chest's free room before walking to it; a full chest gets a second half (a colonist crafts and places a chest, the colony does it after 3 minutes), meanwhile surplus and junk go to the market, and nobody walks back and forth to a full chest (3 min backoff).
+- **Night**: sleep is a need, not a schedule. Colonists sleep when they have been awake two nights (phantoms; not when `spawn_phantoms` is off), when hurt, or when the whole colony agrees to sleep through a night with many monsters around (only if no real player is awake: `players_sleeping_percentage` is 100). Otherwise they work a night shift: mining underground, smelting, the lit farm, guarding the plaza. They sleep in their own bed in their house (door opened and closed behind them); if that bed cannot be reached within 45 s, in a camp bed by the fire.
+- **Looting**: chests of structures near the colony (ruined portals, villages, shipwrecks, ruins) are noted, looted (never next to lava; dungeons and chests deep underground are skipped), the loot goes to storage, and every chest is remembered.
 - **Economy**: sale prices reflect effort (log 1, cobblestone 0.25, coal 1, raw iron 3, diamond 25); a block costs its raw materials times 1.2, imported blocks have their own price (calcite 0.8, glass pane 0.25, cut copper 1.6, terracotta 1.2, lantern 2.5, bed 2.5). Iron is not sold while anyone still lacks iron gear. Prices: `wild/economy.mjs`.
 - **Construction**: the builder buys the next batch of 40 blocks, the merchant hands them over, and the builder places them by hand in survival (standing on the ground, inside the house, or on the attic floor reached by the ladder). What cannot be placed by hand (no support, tricky blocks, unreachable spots, wrong orientation) is set by the "crew" with RCON while the builder looks at it and swings. The first projects are colonist's cabins (`wild/houses.mjs`, 342 blocks); city generators need 21×21 plots and are not used yet.
 

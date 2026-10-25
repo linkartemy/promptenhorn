@@ -154,6 +154,22 @@ Details für Generator-Autoren: `docs/generator-contract.md`.
 
 Für die Fortschritte und die Schaltfläche "Rathaus" im Pausenmenü installiert die Bridge das Datenpaket `datapack/promptenhorn` selbst in `server/world/datapacks/` und lädt die Datenpakete neu. Die Schaltfläche im Pausenmenü erscheint nach dem nächsten Serverneustart (Dialoge werden nur beim Start geladen); der Link "[Rathaus]" im Chat funktioniert sofort. Aus dem Rathausfenster lässt sich auch die Live-Karte im Browser öffnen.
 
+## Modus „Kolonisten“
+
+Ein zweiter Modus neben der Stadt: Jeder aktive Chat bekommt zusätzlich einen **Kolonisten** in einer Survival-Kolonie auf einem **eigenen** Minecraft-Server. Kolonisten sind echte Spieler-Bots (Mineflayer) mit einer geskripteten KI, ohne LLM und ohne Tokens: Sie fällen Holz, graben eine eigene Mine, verbessern Werkzeuge und Rüstung, schmelzen, kämpfen, ernten, jagen, plündern Truhen naher Ruinen, führen ein gemeinsames Lager, verkaufen Überschüsse und bauen davon Hütten von Hand. Die Stadt bleibt unberührt.
+
+```
+node wild/setup.mjs        # einmal: legt wild-server/ an (Paper aus server/, eigene Welt, neues RCON-Passwort, Port 25567)
+wild\start-wild.cmd        # Windows: Kolonie-Server und Kolonie in zwei Fenstern
+sh wild/start-wild.sh      # macOS / Linux: dasselbe (Strg+C beendet beides)
+```
+
+Dann **„Kolonisten“** auf http://127.0.0.1:7777/ einschalten (die Bridge der Stadt muss laufen und leitet die Chat-Ereignisse weiter). Beenden: `node wild/stop.mjs` (jeder Kolonist bringt zuerst alles ins Lager), dann `stop` im Server-Fenster. `wild-server/`, `wild-state.json` und `wild-config.json` sind git-ignoriert.
+
+**Wie viele**: einer pro aktivem Chat, höchstens `colonistsMax` (Standard 3) in der `config.json` der Stadt — auf der Einstellungsseite, mit `node tools/tune.mjs --apply` (oder `/promptenhorn-tune`) oder per `colonistsMax` (auch `maxColonists`) in `wild-config.json`. Sinkt die Grenze, räumen die überzähligen Kolonisten ihre Sachen ins Lager und gehen.
+
+**Zuschauen**: Minecraft 1.21.11, `127.0.0.1:25567`. Nur beim allerersten Besuch wirst du einmal über den Platz gesetzt, danach bewegen dich nur deine eigenen Klicks: **[tp]** zu einem Kolonisten, **[follow]** (`/spectate`). **Tab** zeigt alle Kolonisten mit Chat, Rolle, Gesundheit und Aufgabe, die **Seitenleiste** die Wirtschaft der Kolonie. Status: http://127.0.0.1:7785/.
+
 ## Abstimmung auf den Rechner
 
 `node tools/tune.mjs` misst den Rechner (RAM, CPU, was läuft) und – nur lesend – den laufenden Server (TPS, MSPT, Chunks, Entities) und zeigt einen Plan: Java-Speicher und -Flags der Startskripte, `view-distance` / `simulation-distance`, Tick-Einsparungen in Paper/Spigot/Bukkit und die Grenzen der Bridge (`builderBotsMax`, `colonistsMax`, Renovierungstempo, Lebensdichte). Erst mit `--apply` wird etwas geschrieben, jede Datei vorher nach `backups/tune/<Zeit>/` gesichert; danach Server und Bridge neu starten.

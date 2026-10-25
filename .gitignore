@@ -45,3 +45,9 @@ wild-config.json
 .wild-heartbeat
 .dev/wild-heartbeat
 .dev/wild-config.json
+
+# Local measurement and run artifacts
+.dev/*.jsonl
+.dev/wild-status-*.json
+.dev/*heartbeat*
+.dev/wild-config.json

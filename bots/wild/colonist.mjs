@@ -59,7 +59,7 @@ export class Colonist {
   }
 
   say(key, vars = {}, opts = {}) {
-    this.colony.say(this, key, vars, opts);
+    return this.colony.say(this, key, vars, opts);
   }
 
   isDay() {
@@ -78,6 +78,15 @@ export class Colonist {
     this.bot = await makeBot({ host: cfg.mcHost, port: cfg.mcPort, username: this.name, viewDistance: cfg.botViewDistance });
     const bot = this.bot;
     await this.colony.onSpawned?.(this); // far from the colony (old position): bring it home before anything bites
+    // prismarine-block: tools with 1.21 item components pass a non-iterable enchantment list to digTime
+    const proto = Object.getPrototypeOf(bot.blockAt(bot.entity.position.floored()) ?? {});
+    if (proto?.digTime && !proto.__wildDigPatch) {
+      const dig = proto.digTime;
+      proto.digTime = function (held, creative, inWater, notOnGround, ench, effects) {
+        return dig.call(this, held, creative, inWater, notOnGround, Array.isArray(ench) ? ench : [], effects ?? {});
+      };
+      proto.__wildDigPatch = true;
+    }
     bot.loadPlugin(pathfinder);
     this.combat = new Combat(this);
     this.mine = new Mine(this);
@@ -132,8 +141,10 @@ export class Colonist {
     m.allowSprinting = true;
     m.maxDropDown = 3; // no fall damage
     m.allow1by1towers = true;
+    m.canOpenDoors = true; // Paper handles door clicks fine; colonists must get out of the houses they build
     m.liquidCost = 25;
     m.scafoldingBlocks = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack'].map((n) => reg.itemsByName[n]?.id).filter(Boolean);
+    for (const n of Object.keys(reg.blocksByName).filter((x) => /_door$/.test(x))) m.blocksCantBreak.add(reg.blocksByName[n].id);
     for (const n of ['ice', 'packed_ice', 'blue_ice', 'chest', 'furnace', 'crafting_table', 'campfire', 'barrel', 'lantern', 'torch', 'wall_torch', 'smoker', 'farmland', 'wheat', 'red_bed', 'white_bed', 'blue_bed', 'green_bed']) {
       const b = reg.blocksByName[n];
       if (b) m.blocksCantBreak.add(b.id);
@@ -143,6 +154,8 @@ export class Colonist {
     const prot = (block) => (this.colony.isProtected(block.position) ? 100 : 0);
     m.exclusionAreasBreak = [prot];
     m.exclusionAreasPlace = [prot];
+    // cells where the server keeps rejecting our moves: walk around them
+    m.exclusionAreasStep = [(block) => (this.colony.isBadCell(block.position) ? 100 : 0)];
     bot.pathfinder.setMovements(m);
     bot.pathfinder.thinkTimeout = 10000;
     bot.pathfinder.tickTimeout = 20; // several bots share one event loop
@@ -248,6 +261,14 @@ export class Colonist {
 
   async go(goal, opts = {}) {
     this.check();
+    // inside a finished house and going somewhere else: out through the door first (closing it)
+    if (!opts.inHouse) {
+      const h = this.colony.houseAt(this.bot.entity.position.floored());
+      const gx = goal.x ?? goal.entity?.position?.x;
+      const gz = goal.z ?? goal.entity?.position?.z;
+      const gy = goal.y ?? this.bot.entity.position.y;
+      if (h && gx != null && !this.colony.houseAt(new Vec3(Math.floor(gx), Math.floor(gy), Math.floor(gz ?? 0)))) await this.leaveHouse(h);
+    }
     // leaving the own mine: walk its staircase out instead of asking A* to plan through rock
     if (!opts.inMine && this.mine && this.bot.entity.position.y < (this.mine.state()?.entrance?.y ?? -999) - 3) {
       const gy = goal.y ?? goal.entity?.position?.y;
@@ -277,6 +298,19 @@ export class Colonist {
     const p = this.bot.entity.position;
     this.stats.unstuck = (this.stats.unstuck ?? 0) + 1;
     this.colony.stat('unstuck', 1);
+    // the same cell again and again: mark it, so paths (and the mine) avoid it from now on
+    const key = p.floored().toString();
+    this.stuckCells ??= new Map();
+    const n = (this.stuckCells.get(key) ?? 0) + 1;
+    this.stuckCells.set(key, n);
+    if (n >= 3) {
+      this.colony.markBadCell(p.floored());
+      const m = this.mine?.state();
+      if (m?.path?.some((q) => Math.abs(q.x - p.x) < 1.5 && Math.abs(q.z - p.z) < 1.5 && Math.abs(q.y - p.y) < 2)) this.colony.setMineState(this, null);
+      this.stuckCells.delete(key);
+      await this.colony.recall(this);
+      return;
+    }
     if (this.colony.cfg.dev) {
       const f = p.floored();
       const nb = [[0, 0, 0], [0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]].map(([x, y, z]) => this.bot.blockAt(f.offset(x, y, z))?.name ?? '?');
@@ -575,22 +609,209 @@ export class Colonist {
 
   // ------------------------------------------------------------------ day / night / home
 
-  async doSleep() {
+  /**
+   * Sleeps when it is needed (the brain decides: insomnia risk, the colony skips a dangerous night,
+   * low health). Own bed in the own house first; if that bed is not reached within 45 s (door, path),
+   * the camp bed by the fire — never a second try at the same door the same night.
+   */
+  async doSleep(why = 'need') {
     const bot = this.bot;
-    const bed = this.colony.bedFor(this);
-    await this.goNear(bed, 2, { timeout: 60000 });
-    const block = bot.blockAt(bed);
-    if (!block || !/_bed$/.test(block.name)) return this.colony.bedMissing(this, bed);
-    this.say('night', {});
+    const house = this.colony.houseOf(this);
+    let target = null;
+    if (house && (this.houseFailNight ?? -1) !== this.nightNo()) {
+      const t0 = Date.now();
+      try {
+        if (!this.colony.houseAt(bot.entity.position.floored())) await this.enterHouse(house);
+        if (this.colony.houseAt(bot.entity.position.floored()) && Date.now() - t0 < 45000) {
+          await walkTo(bot, new goals.GoalNear(house.bed.x, house.bed.y, house.bed.z, 1.5), { timeout: 10000, retries: 1, shouldStop: () => !!this.interruptWhy || this.dead });
+          if (bot.entity.position.distanceTo(house.bed.offset(0.5, 0.5, 0.5)) < 3) target = house.bed;
+        }
+      } catch (e) {
+        if (e.interrupted) throw e;
+      }
+      if (!target) {
+        this.houseFailNight = this.nightNo();
+        this.dbg('house bed not reachable tonight: camp bed');
+        this.colony.stat('houseBedFail', 1);
+        if (this.colony.houseAt(bot.entity.position.floored())) await this.leaveHouse(house);
+      }
+    }
+    if (!target) {
+      target = this.colony.campBed(this) ?? (house ? null : this.colony.bedFor(this));
+      if (!target) return this.guard(8000);
+      await this.goNear(target, 2, { timeout: 45000 });
+    }
+    const block = bot.blockAt(target);
+    if (!block || !/_bed$/.test(block.name)) return house && target === house.bed ? this.guard(5000) : this.colony.bedMissing(this, target);
+    this.say(why === 'skip' ? 'nightSkip' : 'night', {});
     try {
       await bot.sleep(block);
       this.stats.slept++;
+      this.colony.noteSlept(this);
       this.task = 'sleep';
       for (let i = 0; i < 400 && bot.isSleeping && this.running; i++) await sleep(500);
     } catch (e) {
       if (/monsters/i.test(e.message)) this.say('cantSleep', {});
+      this.dbg(`sleep: ${e.message}`);
+      this.sleepFailAt = Date.now();
       await this.guard(8000);
     }
+    if (house && this.isDay() && this.colony.houseAt(bot.entity.position.floored())) await this.leaveHouse(house); // morning: out, door shut
+  }
+
+  async openDoor(pos) {
+    const bot = this.bot;
+    const d = bot.blockAt(pos);
+    if (!d || !/_door$/.test(d.name)) return;
+    const open = d.getProperties().open;
+    if (!(open === true || open === 'true')) {
+      await bot.lookAt(pos.offset(0.5, 0.5, 0.5), true).catch(() => {});
+      await bot.activateBlock(d, new Vec3(0, 0, 1), new Vec3(0.5, 0.5, 0.5)).catch((e) => this.dbg(`door: ${e.message}`));
+      await sleep(300);
+      const now = bot.blockAt(pos)?.getProperties().open;
+      if (!(now === true || now === 'true')) {
+        // the click did not take (lag, wrong side): the colony opens it (RCON) so nobody is locked out
+        const st = d.getProperties();
+        await this.colony.rcon(`setblock ${pos.x} ${pos.y} ${pos.z} ${d.name}[facing=${st.facing},half=lower,hinge=${st.hinge},open=true]`);
+        await this.colony.rcon(`setblock ${pos.x} ${pos.y + 1} ${pos.z} ${d.name}[facing=${st.facing},half=upper,hinge=${st.hinge},open=true]`);
+        this.dbg(`door at ${pos} opened by the crew`);
+        await sleep(200);
+      }
+    }
+  }
+
+  /**
+   * Steps through a doorway by hand: the pathfinder treats every door (even an open one) as a wall.
+   * `dz` is the direction of travel along z (+1 into a cabin, -1 out of it). True when through.
+   */
+  async throughDoor(door, dz) {
+    const bot = this.bot;
+    const target = door.offset(0.5, 0, 0.5 + dz * 1.2);
+    const through = () => (dz > 0 ? bot.entity.position.z > door.z + 1.4 : bot.entity.position.z < door.z - 0.4);
+    bot.pathfinder.setGoal(null);
+    // the swung-open panel can still block the way, depending on facing and hinge: if we do not
+    // get through, flip the door once and try again
+    for (let attempt = 0; attempt < 3 && !through(); attempt++) {
+      if (attempt > 0) {
+        bot.setControlState('forward', false);
+        const d = bot.blockAt(door);
+        if (d && /_door$/.test(d.name)) await bot.activateBlock(d).catch(() => {});
+        await sleep(250);
+      }
+      const t0 = Date.now();
+      let last = bot.entity.position.clone();
+      let still = 0;
+      while (Date.now() - t0 < 2500 && !through()) {
+        await bot.lookAt(target.offset(0, 1.6, 0), true);
+        bot.setControlState('forward', true);
+        await bot.waitForTicks(2);
+        if (bot.entity.position.distanceTo(last) < 0.02) {
+          if (++still > 6) break;
+        } else still = 0;
+        last = bot.entity.position.clone();
+      }
+    }
+    bot.setControlState('forward', false);
+    const z = bot.entity.position.z;
+    return dz > 0 ? z > door.z + 1.2 : z < door.z - 0.2;
+  }
+
+  /** Into a house: to the door, open it, walk through, close it behind us. */
+  async enterHouse(h) {
+    const r = await this.go(new goals.GoalBlock(h.door.x, h.door.y, h.door.z - 1), { timeout: 60000, inHouse: true });
+    await this.openDoor(h.door);
+    const d = this.bot.blockAt(h.door);
+    let ok = await this.throughDoor(h.door, +1);
+    this.dbg(`enter house ${h.id}: walk ${r.ok ? 'ok' : r.error} at ${this.bot.entity.position.toString()}, door ${d?.name} open=${d?.getProperties().open}, through=${ok}`);
+    if (!ok && this.bot.entity.position.distanceTo(h.door.offset(0.5, 0, 0.5)) < 2.5) {
+      // standing at the open door but the client physics will not let us through: one step in by the colony
+      await this.colony.rcon(`tp ${this.name} ${h.door.x + 0.5} ${h.door.y} ${h.door.z + 1.5}`);
+      await sleep(400);
+      this.colony.stat('letIn', 1);
+      ok = !!this.colony.houseAt(this.bot.entity.position.floored());
+    }
+    await this.closeDoor(h.door);
+    return ok;
+  }
+
+  /** Out of a house: down the ladder if in the attic, open the door, step out, close it. */
+  async leaveHouse(h) {
+    const bot = this.bot;
+    if (bot.entity.position.y > h.inside.y + 2) await walkTo(bot, new goals.GoalBlock(h.inside.x, h.inside.y, h.inside.z), { timeout: 15000, retries: 1, shouldStop: () => !!this.interruptWhy || this.dead });
+    await walkTo(bot, new goals.GoalBlock(h.door.x, h.door.y, h.door.z + 1), { timeout: 10000, retries: 1, shouldStop: () => !!this.interruptWhy || this.dead });
+    await this.openDoor(h.door);
+    await this.throughDoor(h.door, -1);
+    if (this.colony.houseAt(bot.entity.position.floored())) {
+      // still inside (door blocked, attic hole missed): the colony lets us out
+      await this.colony.rcon(`tp ${this.name} ${h.outside.x + 0.5} ${h.outside.y} ${h.outside.z + 0.5}`);
+      this.colony.stat('letOut', 1);
+    }
+    await this.closeDoor(h.door);
+    this.check();
+  }
+
+  nightNo() {
+    return Math.floor((this.bot?.time?.age ?? 0) / 24000);
+  }
+
+  async closeDoor(pos) {
+    const bot = this.bot;
+    const d = bot.blockAt(pos);
+    if (!d || !/_door$/.test(d.name)) return;
+    if (d.getProperties().open === true || d.getProperties().open === 'true') {
+      await bot.activateBlock(d).catch(() => {});
+      await sleep(150);
+    }
+  }
+
+  /** Takes an outdoor camp bed apart once the colonist sleeps in its house (the bed goes to storage). */
+  async tidy(job) {
+    const bot = this.bot;
+    await this.goNear(job.spot, 2, { timeout: 30000 });
+    const b = bot.blockAt(job.spot);
+    if (b && /_bed$/.test(b.name)) {
+      await bot.dig(b, true).catch(() => {});
+      await this.collectDrops(job.spot.offset(0.5, 0.5, 0.5), 3, 3000);
+    }
+    job.done();
+  }
+
+  /** Loots a chest of a structure near the colony; never steps next to lava. */
+  async loot(job) {
+    const bot = this.bot;
+    const p = job.pos;
+    const lava = [];
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 1; dy++) for (let dz = -2; dz <= 2; dz++) if (/lava/.test(bot.blockAt(p.offset(dx, dy, dz))?.name ?? '')) lava.push(1);
+    if (lava.length) return this.colony.lootDone(this, job, [], 'lava');
+    const r = await this.go(new goals.GoalGetToBlock(p.x, p.y, p.z), { timeout: 60000 });
+    if (!r.ok && bot.entity.position.distanceTo(p) > 4.5) return this.colony.lootDone(this, job, [], 'unreachable');
+    const block = bot.blockAt(p);
+    if (!block || !/chest|barrel/.test(block.name)) return this.colony.lootDone(this, job, [], 'gone');
+    let box;
+    const got = new Map();
+    try {
+      box = await bot.openContainer(block);
+      for (const it of box.containerItems()) {
+        if (I.freeSlots(bot) < 2) break;
+        try {
+          await box.withdraw(it.type, null, it.count);
+          got.set(it.name, (got.get(it.name) ?? 0) + it.count);
+        } catch {
+          break;
+        }
+      }
+    } finally {
+      try {
+        box?.close();
+      } catch {}
+    }
+    const items = [...got].sort((a, b) => b[1] - a[1]).map(([name, n]) => [n, name]);
+    this.colony.lootDone(this, job, items, 'ok');
+    // announced, but rate-limited (a loot line per colonist a minute at most)
+    if (items.length) this.say('loot', { place: this.colony.t(`wild.place.${job.place}`), what: items.slice(0, 3).map(([n, name]) => `${n} ${I.ru(name)}`).join(', ') }, { keyCooldownMs: 60000 });
+    else this.say('lootEmpty', { place: this.colony.t(`wild.place.${job.place}`) }, { keyCooldownMs: 120000 });
+    // the find goes into the colony storage right away
+    if (items.length) await this.visitBase({ reason: 'loot' });
   }
 
   async doHome(night) {
@@ -607,11 +828,65 @@ export class Colonist {
     await this.guard(night ? 15000 : 10000);
   }
 
+  /** Night shift by the lit plaza: raw iron from storage through the furnace, ingots back into storage. */
+  async nightSmelt() {
+    const bot = this.bot;
+    this.nightSmeltAt = Date.now();
+    if (I.count(bot, 'raw_iron') < 3) await this.visitBase({ reason: 'fetch', want: { raw_iron: 16 } });
+    const n = I.count(bot, 'raw_iron');
+    if (n < 1) return;
+    await this.smelt('raw_iron', n);
+    if (I.count(bot, 'iron_ingot') > 0) await this.visitBase({ reason: 'smelted' });
+  }
+
+  /** Badly hurt with no food: wait on the plaza (the colony may buy bread), fights only if attacked. */
+  async rest() {
+    await this.goHome(4);
+    if (await this.colony.buyFood(this)) return this.eat({ force: true });
+    await this.guard(15000);
+  }
+
+  /** Lights dark standable spots around the plaza and the mine entrance with torches (fewer spawns). */
+  async lightUp(max = 3) {
+    const bot = this.bot;
+    if (!I.find(bot, 'torch')) return 0;
+    const h = this.colony.home().floored();
+    let n = 0;
+    for (let tries = 0; tries < 40 && n < max; tries++) {
+      const p = h.offset(Math.round((Math.random() - 0.5) * 36), 0, Math.round((Math.random() - 0.5) * 36));
+      let cell = null;
+      for (let dy = 4; dy >= -4; dy--) {
+        const q = p.offset(0, dy, 0);
+        const b = bot.blockAt(q);
+        const below = bot.blockAt(q.offset(0, -1, 0));
+        if (b?.name === 'air' && below?.boundingBox === 'block' && !/leaves|fence|chest|campfire/.test(below.name)) {
+          cell = q;
+          break;
+        }
+      }
+      if (!cell || this.colony.isProtected(cell)) continue;
+      const light = bot.blockAt(cell)?.light ?? 15;
+      if (light >= 8) continue;
+      await this.goNear(cell, 3, { timeout: 15000 });
+      try {
+        await bot.equip(I.find(bot, 'torch'), 'hand');
+        await bot.placeBlock(bot.blockAt(cell.offset(0, -1, 0)), new Vec3(0, 1, 0));
+        n++;
+        this.colony.stat('torches', 1);
+      } catch {}
+      if (!I.find(bot, 'torch')) break;
+    }
+    return n;
+  }
+
   /** Walks around the plaza, looks at colleagues; the reflex handles intruders. */
   async guard(ms) {
     const bot = this.bot;
     const h = this.colony.home();
     const t0 = Date.now();
+    if (this.isDay() && I.count(bot, 'torch') > 2 && Math.random() < 0.5) await this.lightUp(2).catch((e) => {
+      if (e.interrupted) throw e;
+    });
     while (Date.now() - t0 < ms) {
       this.check();
       const p = h.offset(Math.round((Math.random() - 0.5) * 10), 0, Math.round((Math.random() - 0.5) * 10));
@@ -623,9 +898,24 @@ export class Colonist {
     }
   }
 
+  /**
+   * Leaving for good (the chat ended, the pool shrank): first everything carried goes to the colony —
+   * on foot to storage (surplus to the market, as always); whatever is left (chests full, stuck, far
+   * away) the colony moves by RCON into storage or to a colonist who stays. Then disconnect.
+   */
   async doLeave() {
-    await this.goHome(4).catch(() => {});
-    await this.visitBase({ reason: 'leave', all: true }).catch(() => {});
+    const rethrow = (e) => {
+      if (e.interrupted) throw e;
+      this.log(`leave: ${e.message}`);
+    };
+    this.leavingSince ??= Date.now();
+    const far = this.bot.entity.position.distanceTo(this.colony.home()) > 96;
+    if (!far && Date.now() - this.leavingSince < 150000) {
+      await this.goHome(4).catch(rethrow);
+      await this.visitBase({ reason: 'leave', all: true }).catch(rethrow);
+    }
+    const left = await this.colony.handOver(this);
+    if (left > 0) this.log(`leaves with ${left} stack(s): no room anywhere`);
     this.say(this.helper ? 'helperBye' : 'bye', {});
     await sleep(1500);
     this.colony.colonistLeft(this);
@@ -692,6 +982,7 @@ export class Colonist {
 
   async fetchKit(gap) {
     const c = this.colony;
+    this.kitCheckedAt = Date.now();
     const want = {};
     for (const k of Object.keys(gap)) {
       if (['pickaxe', 'sword', 'axe', 'hoe'].includes(k)) want[`/_${k}$/`] = 1;
@@ -731,54 +1022,122 @@ export class Colonist {
   async visitBase({ reason = 'deposit', want = null, all = false } = {}) {
     const bot = this.bot;
     const c = this.colony;
+    // the plan first (from the colony's last view of the chests), so nobody walks to a full chest
+    const plan = () => {
+      const totals = new Map();
+      for (const it of I.itemsOf(bot)) if (!I.TRASH.test(it.name)) totals.set(it.name, (totals.get(it.name) ?? 0) + it.count);
+      const byChest = new Map(); // "x,y,z" -> { pos, items: Map(name -> n) }
+      const toMarket = new Map();
+      const put = (pos, name, n) => {
+        const k = pos.toString();
+        if (!byChest.has(k)) byChest.set(k, { pos, items: new Map() });
+        const m = byChest.get(k).items;
+        m.set(name, (m.get(name) ?? 0) + n);
+      };
+      for (const [name, total] of totals) {
+        // a worn duplicate tool is not "the best": keep only the best one of each kind
+        const keep = all ? (c.builder === this && c.isBuildItem(name) ? Infinity : 0) : this.keepOf({ name });
+        const n = total - keep;
+        if (n <= 0) continue;
+        const room = c.storageRoom(name);
+        const target = c.depositTarget(name);
+        let s = target ? Math.min(n, room) : 0;
+        if (s > 0) put(target, name, s);
+        let rest = n - s;
+        if (rest <= 0) continue;
+        if (c.sellable(name) || (!target && c.isJunk(name))) toMarket.set(name, rest);
+        else if (target) put(target, name, rest);
+      }
+      return { byChest, toMarket };
+    };
+    const { byChest, toMarket } = plan();
+    if (!byChest.size && !toMarket.size && !want && reason !== 'leave') {
+      // nothing can go anywhere (storage full, nothing sellable): do not walk there again for a while
+      this.depositBackoff = Date.now() + 180000;
+      this.dbg('deposit: storage full, backing off');
+      return { ok: false, error: 'storage full' };
+    }
     await this.goHome(6);
     this.lastDeposit = Date.now();
     for (const it of I.itemsOf(bot)) if (I.TRASH.test(it.name)) await bot.tossStack(it).catch(() => {});
-    const totals = new Map();
-    for (const it of I.itemsOf(bot)) totals.set(it.name, (totals.get(it.name) ?? 0) + it.count);
-    // a worn duplicate tool is not "the best": keep only the best one of each kind
-    const out = new Map();
-    for (const [name, n] of totals) {
-      const keep = all ? (c.builder === this && c.isBuildItem(name) ? Infinity : 0) : this.keepOf({ name });
-      if (n > keep) out.set(name, n - keep);
-    }
-    const byChest = new Map(); // chest key -> Map(name -> n)
-    const toMarket = new Map();
-    for (const [name, n] of out) {
-      const room = c.storageRoom(name);
-      const s = Math.min(n, room);
-      const put = (k, name2, m) => {
-        if (!byChest.has(k)) byChest.set(k, new Map());
-        byChest.get(k).set(name2, (byChest.get(k).get(name2) ?? 0) + m);
-      };
-      if (s > 0) put(c.storageCategory(name), name, s);
-      if (n - s > 0) {
-        if (c.sellable(name)) toMarket.set(name, n - s);
-        else put(c.storageCategory(name), name, n - s);
-      }
-    }
     // withdrawals grouped by the chest that holds them
     const wantBy = new Map();
     for (const [key, n] of Object.entries(want ?? {})) {
-      const cat = c.categoryForWant(key);
-      if (!wantBy.has(cat)) wantBy.set(cat, {});
-      wantBy.get(cat)[key] = n;
+      const pos = c.storagePos(c.categoryForWant(key));
+      const k = pos.toString();
+      if (!wantBy.has(k)) wantBy.set(k, { pos, want: {} });
+      wantBy.get(k).want[key] = n;
     }
-    const cats = new Set([...byChest.keys(), ...wantBy.keys()]);
+    const before = I.itemsOf(bot).reduce((n, i) => n + i.count, 0);
     let stored = 0;
-    for (const cat of cats) {
-      await this.useChest(c.storagePos(cat), byChest.get(cat), wantBy.get(cat));
-      stored += [...(byChest.get(cat)?.values() ?? [])].reduce((a, b) => a + b, 0);
+    for (const k of new Set([...byChest.keys(), ...wantBy.keys()])) {
+      const pos = byChest.get(k)?.pos ?? wantBy.get(k).pos;
+      const items = byChest.get(k)?.items;
+      const n0 = I.itemsOf(bot).reduce((n, i) => n + i.count, 0);
+      try {
+        await this.useChest(pos, items, wantBy.get(k)?.want);
+      } catch (e) {
+        if (e.interrupted) throw e;
+        this.log(`deposit: ${e.message}`);
+        continue;
+      }
+      if (items) stored += Math.max(0, n0 - I.itemsOf(bot).reduce((n, i) => n + i.count, 0));
     }
+    // what did not fit (a chest filled up meanwhile): sellable things and junk go to the market
+    const left = new Map();
+    for (const { items } of byChest.values()) {
+      for (const [name, n] of items) {
+        const have = I.count(bot, name) - (all ? 0 : this.keepOf({ name }));
+        if (have > 0 && (c.sellable(name) || c.isJunk(name))) left.set(name, Math.min(n, have));
+      }
+    }
+    for (const [name, n] of left) toMarket.set(name, (toMarket.get(name) ?? 0) + n);
     if (toMarket.size) {
-      await this.useChest(c.base.market, toMarket, null, true);
-      this.say('sold', { what: describe(toMarket) });
+      await this.useChest(c.base.market, toMarket, null, true).catch((e) => {
+        if (e.interrupted) throw e;
+        this.log(`market: ${e.message}`);
+      });
+      if ([...toMarket.keys()].some((n) => c.sellable(n))) this.say('sold', { what: describe(new Map([...toMarket].filter(([n]) => c.sellable(n)))) });
     }
+    const moved = before - I.itemsOf(bot).reduce((n, i) => n + i.count, 0);
+    if (moved <= 0 && !want && reason !== 'leave') this.depositBackoff = Date.now() + 180000; // nothing went in: storage full
     if (stored) {
       this.stats.deposits++;
-      if (reason !== 'leave' && Math.random() < 0.4) this.say('deposit', { what: describe(new Map([...byChest.values()].flatMap((m) => [...m]))) });
+      if (reason !== 'leave' && Math.random() < 0.4) this.say('deposit', { what: describe(new Map([...byChest.values()].flatMap((m) => [...m.items]))) });
     }
     await c.serviceFurnace(this).catch(() => {});
+  }
+
+  /** A storage chest is full: craft a chest (8 planks) and put it next to it, so it becomes a double chest. */
+  async makeStorageChest(job) {
+    const bot = this.bot;
+    if (job.first && !this.say('storageFull', {}, { urgent: true })) setTimeout(() => this.say('storageFull', {}, { urgent: true }), 1500);
+    let ok = false;
+    try {
+      if (!I.find(bot, 'chest')) {
+        await this.craftPlanksAndSticks({ planks: 8 });
+        await this.craft('chest', 1, await this.reachTable());
+        this.stats.crafted++;
+      }
+      const it = I.find(bot, 'chest');
+      if (it) {
+        // stand in front (south) of the new spot and face north: the chest faces south like the old one
+        await this.go(new goals.GoalBlock(job.spot.x, job.spot.y, job.spot.z + 2), { timeout: 30000 });
+        const below = bot.blockAt(job.spot.offset(0, -1, 0));
+        if (bot.blockAt(job.spot)?.name === 'air' && below) {
+          await bot.equip(it, 'hand');
+          await bot.lookAt(job.spot.offset(0.5, 0.5, 0.5), true);
+          await bot.placeBlock(below, new Vec3(0, 1, 0));
+          ok = true;
+          this.stats.placedHand++;
+        }
+      }
+    } catch (e) {
+      if (e.interrupted) throw e;
+      this.log(`storage chest: ${e.message}`);
+    } finally {
+      await this.colony.storageChestPlaced(this, job, ok);
+    }
   }
 
   /** Opens a chest, deposits `put` (name -> count), withdraws `want` (name|/regex/ -> count). */
@@ -792,17 +1151,30 @@ export class Colonist {
     const release = market ? await c.lockMarket(this) : () => {};
     let chest;
     try {
-      chest = await bot.openContainer(block);
+      chest = await withTimeout(bot.openContainer(block), 8000, 'chest did not open');
+      const t0 = Date.now();
+      const late = () => Date.now() - t0 > 25000; // a whole visit at one chest never takes longer
+      // Whole stacks move by shift-click on their exact slot: deposit()/withdraw() look items up by
+      // type and NBT and fail on 1.21 items with components (worn tools: "Can't find ... in slots").
+      const shift = async (slot) => {
+        await withTimeout(bot.clickWindow(slot, 0, 1), 3000, 'click timeout').catch(() => {});
+        await sleep(60);
+      };
       for (const [name, n] of put ?? []) {
         let left = n;
         for (const it of I.itemsOf(bot).filter((i) => i.name === name)) {
-          if (left <= 0) break;
+          if (left <= 0 || late()) break;
           const k = Math.min(left, it.count);
           try {
-            await chest.deposit(it.type, null, k);
+            if (k === it.count) {
+              const ws = chest.inventoryStart + it.slot - 9; // the bag slot inside the chest window
+              if (chest.slots[ws]?.name !== name) continue;
+              await shift(ws);
+              if (chest.slots[ws]?.name === name && chest.slots[ws]?.count === it.count) break; // the chest took nothing: full
+            } else await withTimeout(chest.deposit(it.type, null, k), 5000, 'deposit timeout');
             left -= k;
           } catch (e) {
-            if (/full/i.test(e.message)) break;
+            if (/full|timeout/i.test(e.message)) break;
             throw e;
           }
         }
@@ -814,10 +1186,12 @@ export class Colonist {
         // tools/armour: the best tier first
         const items = chest.containerItems().filter((i) => (re ? re.test(i.name) : i.name === key)).sort((a, b) => I.tierOf(b.name) - I.tierOf(a.name) || I.armorTier(b.name) - I.armorTier(a.name));
         for (const it of items) {
-          if (left <= 0) break;
+          if (left <= 0 || late() || I.freeSlots(bot) < 1) break;
           const k = Math.min(left, it.count);
           try {
-            await chest.withdraw(it.type, null, k);
+            if (k === it.count) await shift(it.slot);
+            else await withTimeout(chest.withdraw(it.type, null, k), 5000, 'withdraw timeout');
+            if (chest.slots[it.slot]?.name === it.name && k === it.count) break; // did not move
             left -= k;
             got[it.name] = (got[it.name] ?? 0) + k;
           } catch {
@@ -825,7 +1199,7 @@ export class Colonist {
           }
         }
       }
-      if (!market) c.noteStorage(pos, chest.containerItems());
+      if (!market) c.noteStorage(pos, chest.containerItems(), chest.inventoryStart ?? 27);
       return got;
     } finally {
       try {
@@ -959,9 +1333,46 @@ export class Colonist {
       if (!table || !/windowOpen/.test(e.message)) throw e;
       // the table window did not open (too far, lag): step right next to it and try once more
       await this.go(new goals.GoalGetToBlock(table.position.x, table.position.y, table.position.z), { timeout: 20000 });
-      await bot.craft(recipes[0], times, bot.blockAt(table.position));
+      try {
+        await bot.craft(recipes[0], times, bot.blockAt(table.position));
+      } catch (e2) {
+        if (!/windowOpen/.test(e2.message)) throw e2;
+        // still nothing: like a player, put down an own table, craft, take it back
+        await this.craftOnOwnTable(name, times);
+      }
     }
     await sleep(250);
+  }
+
+  async craftOnOwnTable(name, times) {
+    const bot = this.bot;
+    if (!I.find(bot, 'crafting_table')) {
+      await this.craftPlanksAndSticks({ planks: 4 });
+      await this.craft('crafting_table', 1, null);
+    }
+    const me = bot.entity.position.floored();
+    let placed = null;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [0, 2]]) {
+      const q = me.offset(dx, 0, dz);
+      const below = bot.blockAt(q.offset(0, -1, 0));
+      if (bot.blockAt(q)?.name !== 'air' || below?.boundingBox !== 'block' || this.colony.isProtected(q)) continue;
+      try {
+        await bot.equip(I.find(bot, 'crafting_table'), 'hand');
+        await bot.placeBlock(below, new Vec3(0, 1, 0));
+        placed = bot.blockAt(q);
+        break;
+      } catch {}
+    }
+    if (!placed || placed.name !== 'crafting_table') throw new Error('no spot for an own crafting table');
+    try {
+      const item = bot.registry.itemsByName[name];
+      const recipes = bot.recipesFor(item.id, null, 1, placed);
+      if (!recipes.length) throw new Error(`no recipe for ${name}`);
+      await bot.craft(recipes[0], times, placed);
+    } finally {
+      await bot.dig(bot.blockAt(placed.position), true).catch(() => {});
+      await this.collectDrops(placed.position.offset(0.5, 0.5, 0.5), 3, 3000).catch(() => {});
+    }
   }
 
   async reachTable() {
@@ -1403,4 +1814,10 @@ function goalText(g) {
 
 function describe(map) {
   return [...map].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n, k]) => `${k} ${I.ru(n)}`).join(', ');
+}
+
+/** Rejects when the promise does not settle in time (mineflayer window actions can hang on lag). */
+function withTimeout(promise, ms, what) {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(what)), ms)))]).finally(() => clearTimeout(timer));
 }

@@ -154,6 +154,22 @@ Dettagli per chi scrive generatori: `docs/generator-contract.md`.
 
 Per i progressi e il pulsante "Municipio" nel menu di pausa, il bridge installa da sé il pacchetto dati `datapack/promptenhorn` in `server/world/datapacks/` e ricarica i pacchetti dati. Il pulsante nel menu di pausa compare dopo il successivo riavvio del server (i dialoghi vengono caricati solo all'avvio); il link "[Municipio]" nella chat funziona subito. Dalla finestra del municipio si può anche aprire la mappa in tempo reale nel browser.
 
+## Modalità «Coloni»
+
+Una seconda modalità accanto alla città: ogni chat attiva riceve anche un **colono** in una colonia di sopravvivenza sul suo **proprio** server Minecraft. I coloni sono veri bot giocatori (Mineflayer) con un'IA scriptata, senza LLM e senza token: tagliano legna, scavano la loro miniera, migliorano attrezzi e armatura, fondono, combattono, coltivano, cacciano, saccheggiano i forzieri delle rovine vicine, condividono un magazzino, vendono le eccedenze e costruiscono capanne a mano. La città non viene toccata.
+
+```
+node wild/setup.mjs        # una volta: crea wild-server/ (Paper da server/, mondo proprio, nuova password RCON, porta 25567)
+wild\start-wild.cmd        # Windows: il server della colonia e la colonia in due finestre
+sh wild/start-wild.sh      # macOS / Linux: lo stesso (Ctrl+C ferma entrambi)
+```
+
+Poi attiva **«Coloni»** su http://127.0.0.1:7777/ (il bridge della città deve essere in esecuzione e inoltra gli eventi delle chat). Per fermare: `node wild/stop.mjs` (ogni colono prima mette tutto nel magazzino), poi `stop` nella finestra del server. `wild-server/`, `wild-state.json` e `wild-config.json` sono ignorati da git.
+
+**Quanti**: uno per chat attiva, al massimo `colonistsMax` (3 di default) nel `config.json` della città — pagina delle impostazioni, `node tools/tune.mjs --apply` (o `/promptenhorn-tune`) oppure `colonistsMax` (anche `maxColonists`) in `wild-config.json`. Se il limite scende, i coloni in più ripongono le loro cose e se ne vanno.
+
+**Guardare**: Minecraft 1.21.11, `127.0.0.1:25567`. Solo alla tua primissima visita vieni posizionato una volta sopra la piazza; poi ti spostano solo i tuoi clic: **[tp]** da un colono, **[follow]** (`/spectate`). **Tab** mostra ogni colono con chat, ruolo, salute e compito; la **barra laterale**, l'economia della colonia. Stato: http://127.0.0.1:7785/.
+
 ## Regolazione sul computer
 
 `node tools/tune.mjs` misura il computer (RAM, CPU, cosa è in esecuzione) e, in sola lettura, il server avviato (TPS, MSPT, chunk, entità), poi mostra un piano: memoria e flag Java degli script di avvio, `view-distance` / `simulation-distance`, risparmi di tick in Paper/Spigot/Bukkit e i limiti del bridge (`builderBotsMax`, `colonistsMax`, velocità di ristrutturazione, densità di vita). Scrive solo con `--apply`, salvando prima ogni file in `backups/tune/<ora>/`; poi riavvia server e bridge.

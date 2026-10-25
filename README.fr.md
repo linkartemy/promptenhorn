@@ -154,6 +154,22 @@ Détails pour les auteurs de générateurs : `docs/generator-contract.md`.
 
 Pour les progrès et le bouton « Hôtel de ville » du menu pause, le bridge installe lui-même le pack de données `datapack/promptenhorn` dans `server/world/datapacks/` et recharge les packs de données. Le bouton du menu pause apparaît après le prochain redémarrage du serveur (les dialogues ne sont chargés qu'au démarrage) ; le lien « [Hôtel de ville] » dans le chat fonctionne tout de suite. La fenêtre de l'hôtel de ville peut aussi ouvrir la carte en direct dans votre navigateur.
 
+## Mode « Colons »
+
+Un second mode à côté de la ville : chaque chat actif reçoit aussi un **colon** dans une colonie de survie sur son **propre** serveur Minecraft. Les colons sont de vrais bots joueurs (Mineflayer) avec une IA scriptée, sans LLM et sans jetons : ils abattent du bois, creusent leur mine, améliorent outils et armure, fondent, combattent, cultivent, chassent, pillent les coffres des ruines voisines, partagent un entrepôt, vendent les surplus et construisent des cabanes à la main. La ville n'est pas touchée.
+
+```
+node wild/setup.mjs        # une fois : crée wild-server/ (Paper copié de server/, monde propre, nouveau mot de passe RCON, port 25567)
+wild\start-wild.cmd        # Windows : le serveur de la colonie et la colonie dans deux fenêtres
+sh wild/start-wild.sh      # macOS / Linux : pareil (Ctrl+C arrête les deux)
+```
+
+Activez ensuite **« Colons »** sur http://127.0.0.1:7777/ (le pont de la ville doit tourner ; il transmet les événements des chats). Pour arrêter : `node wild/stop.mjs` (chaque colon range d'abord tout à l'entrepôt), puis `stop` dans la fenêtre du serveur. `wild-server/`, `wild-state.json` et `wild-config.json` sont ignorés par git.
+
+**Combien** : un par chat actif, au plus `colonistsMax` (3 par défaut) dans le `config.json` de la ville — page des réglages, `node tools/tune.mjs --apply` (ou `/promptenhorn-tune`) ou `colonistsMax` (ou `maxColonists`) dans `wild-config.json`. Si la limite baisse, les colons en trop rangent leurs affaires et partent.
+
+**Regarder** : Minecraft 1.21.11, `127.0.0.1:25567`. Lors de votre toute première visite seulement, vous êtes placé une fois au-dessus de la place ; ensuite seuls vos propres clics vous déplacent : **[tp]** vers un colon, **[follow]** (`/spectate`). **Tab** montre chaque colon avec chat, rôle, santé et tâche ; la **barre latérale**, l'économie de la colonie. État : http://127.0.0.1:7785/.
+
 ## Réglage selon l'ordinateur
 
 `node tools/tune.mjs` mesure l'ordinateur (RAM, CPU, ce qui tourne) et, en lecture seule, le serveur en marche (TPS, MSPT, chunks, entités), puis affiche un plan : mémoire et options Java des scripts de démarrage, `view-distance` / `simulation-distance`, économies de ticks dans Paper/Spigot/Bukkit et limites du pont (`builderBotsMax`, `colonistsMax`, vitesse de rénovation, densité de vie). Rien n'est écrit sans `--apply` ; chaque fichier est d'abord copié dans `backups/tune/<heure>/`, puis redémarrez le serveur et le pont.

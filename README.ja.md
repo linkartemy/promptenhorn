@@ -154,6 +154,22 @@ node configure.mjs language de     # 言語を変更する
 
 進捗と、ポーズメニューの「町役場」ボタンのために、bridge は `datapack/promptenhorn` データパックを自動的に `server/world/datapacks/` にインストールし、データパックを再読み込みします。ポーズメニューのボタンは次回のサーバー再起動後に現れます（ダイアログは起動時にしか読み込まれないため）。チャットの「[Town hall]」リンクはすぐに使えます。町役場のウィンドウからは、ブラウザでライブマップを開くこともできます。
 
+## 入植者モード
+
+街とは別の第二のモード：アクティブなチャットごとに、**専用**の Minecraft サーバー上のサバイバル植民地に**入植者**が一人加わります。入植者は本物のプレイヤーボット（Mineflayer）で、スクリプト化された AI で動き、LLM もトークンも使いません。木を切り、自分の鉱山を掘り、道具と防具を強化し、精錬し、戦い、畑を耕し、狩りをし、近くの遺跡の宝箱をあさり、共有倉庫を管理し、余りを市場で売って、その収入で小屋を手作業で建てます。街には影響しません。
+
+```
+node wild/setup.mjs        # 一度だけ：wild-server/ を作成（server/ から Paper をコピー、独自のワールド、新しい RCON パスワード、ポート 25567）
+wild\start-wild.cmd        # Windows：植民地サーバーと植民地を二つのウィンドウで起動
+sh wild/start-wild.sh      # macOS / Linux：同じ（Ctrl+C で両方停止）
+```
+
+次に http://127.0.0.1:7777/ で **「入植者」** をオンにします（街のブリッジが動いている必要があり、チャットのイベントを転送します）。停止：`node wild/stop.mjs`（入植者はまず持ち物をすべて倉庫にしまいます）、その後サーバーのウィンドウで `stop`。`wild-server/`、`wild-state.json`、`wild-config.json` は git で無視されます。
+
+**人数**：アクティブなチャットごとに一人、最大は街の `config.json` の `colonistsMax`（既定 3）。設定ページ、`node tools/tune.mjs --apply`（または `/promptenhorn-tune`）、あるいは `wild-config.json` の `colonistsMax`（`maxColonists` も可）で変更できます。上限が下がると、余った入植者は持ち物をしまってから去ります。
+
+**見る**：Minecraft 1.21.11、サーバー `127.0.0.1:25567`。最初の訪問時に一度だけ広場の上に移動され、その後はあなた自身のクリックだけがあなたを動かします：**[tp]** で入植者のもとへ、**[follow]**（`/spectate`）。**Tab** には各入植者のチャット・役割・体力・作業、**サイドバー**には植民地の経済が表示されます。状態ページ：http://127.0.0.1:7785/。
+
 ## PC に合わせた調整
 
 `node tools/tune.mjs` はこの PC（メモリ、CPU、動いているもの）と、読み取り専用で動作中のサーバー（TPS、MSPT、チャンク、エンティティ）を測り、プランを表示します: 起動スクリプトの Java メモリとフラグ、`view-distance` / `simulation-distance`、Paper/Spigot/Bukkit の tick 削減、ブリッジの上限（`builderBotsMax`、`colonistsMax`、改修速度、暮らしの密度）。`--apply` を付けたときだけ書き込み、その前に各ファイルを `backups/tune/<時刻>/` に保存します。その後サーバーとブリッジを再起動してください。

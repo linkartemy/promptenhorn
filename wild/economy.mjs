@@ -11,7 +11,7 @@ export const SELL = {
   log: 1, wood: 1, stem: 1, planks: 0.25, stick: 0.05,
   cobblestone: 0.25, cobbled_deepslate: 0.25, stone: 0.35, andesite: 0.25, diorite: 0.25, granite: 0.25, tuff: 0.25, deepslate: 0.3,
   dirt: 0.02, sand: 0.3, gravel: 0.15, clay_ball: 0.3, flint: 0.3,
-  coal: 2, charcoal: 1.5, raw_iron: 3, iron_ingot: 4, raw_copper: 1, copper_ingot: 1.3, raw_gold: 4, gold_ingot: 5,
+  coal: 1, charcoal: 0.8, raw_iron: 3, iron_ingot: 4, raw_copper: 0.5, copper_ingot: 0.8, raw_gold: 4, gold_ingot: 5,
   diamond: 25, emerald: 10, lapis_lazuli: 0.6, redstone: 0.4, quartz: 1,
   rotten_flesh: 0.2, bone: 0.5, string: 0.6, gunpowder: 1.5, spider_eye: 0.4, arrow: 0.1, leather: 1, feather: 0.2, white_wool: 0.6,
   beef: 0.6, porkchop: 0.6, mutton: 0.5, chicken: 0.4, rabbit: 0.4, rabbit_hide: 0.3, egg: 0.1, apple: 0.5, sweet_berries: 0.1,

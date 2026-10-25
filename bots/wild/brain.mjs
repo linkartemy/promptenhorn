@@ -88,6 +88,8 @@ export function candidates(c) {
   if (bot.entity.isInWater && (bot.oxygenLevel ?? 20) < 18) add('surface', 'survival', 100, () => c.surface());
   if (creeper && !c.hasShield()) add('flee:creeper', 'survival', 95, () => c.flee(creeper, 9));
   if (threat && hp <= 6) add('flee:hurt', 'survival', 92, () => c.retreat(threat));
+  const armed = I.toolTier(bot, 'sword') >= 0 || I.toolTier(bot, 'axe') >= 0;
+  if (threat && !armed && threat.name !== 'creeper') add('flee:unarmed', 'survival', 84, () => c.retreat(threat));
   if (hostiles >= 3 && weak) add('flee:group', 'survival', 88, () => c.retreat(threat));
   if (hp <= 8 && I.find(bot, /^(golden_apple|enchanted_golden_apple)$/)) add('eat:golden', 'survival', 91, () => c.eat({ golden: true }));
   if (threat) add('combat', 'survival', 80, () => c.fightTask(threat));
@@ -105,38 +107,58 @@ export function candidates(c) {
 
   // --- kit and inventory
   const kitGap = c.kitGap();
-  if (kitGap && col.storageCanFill(kitGap)) add('kit', 'work', 70, () => c.fetchKit(kitGap));
-  if (I.freeSlots(bot) < 4) add('deposit:full', 'work', 68, () => c.visitBase({ reason: 'full' }));
-  else if (Date.now() - (c.lastDeposit ?? c.connectedAt ?? 0) > 240000 && c.hasSurplus()) add('deposit', 'work', 36, () => c.visitBase({ reason: 'surplus' }));
+  // the kit from storage — at most every 2 minutes (what storage cannot give stays missing)
+  if (kitGap && Date.now() - (c.kitCheckedAt ?? 0) > 120000 && col.storageCanFill(kitGap)) add('kit', 'work', 70, () => c.fetchKit(kitGap));
+  // storage full: no walking back and forth to it (backoff), a new chest is made instead (storageJob)
+  const canDeposit = Date.now() > (c.depositBackoff ?? 0);
+  if (canDeposit && I.freeSlots(bot) < 4) add('deposit:full', 'work', 68, () => c.visitBase({ reason: 'full' }));
+  else if (canDeposit && Date.now() - (c.lastDeposit ?? c.connectedAt ?? 0) > 240000 && c.hasSurplus()) add('deposit', 'work', 36, () => c.visitBase({ reason: 'surplus' }));
+  const sj = !c.helper && c.mode !== 'leaving' && col.storageJob(c);
+  if (sj) add(`storage:chest`, 'work', 66, () => c.makeStorageChest(sj));
 
-  // --- night: sleep in a bed or stay inside the lit plaza
-  if (night) {
-    if (col.bedFor(c)) add('sleep', 'survival', 65, () => c.doSleep());
-    else add('home:night', 'survival', 60, () => c.doHome(true));
-  }
+  // --- night: sleep only when needed (insomnia risk, the colony skips a dangerous night, low health);
+  // otherwise a safe night shift (below). A failed attempt (monsters near the bed) waits a minute.
+  const sleepWhy = night ? col.sleepNeed(c) : null;
+  if (sleepWhy && Date.now() - (c.sleepFailAt ?? 0) > 60000 && (col.houseOf(c) || col.campBed(c))) add(`sleep:${sleepWhy}`, 'survival', sleepWhy === 'skip' ? 70 : 65, () => c.doSleep(sleepWhy));
+  else if (sleepWhy) add('home:night', 'survival', 60, () => c.doHome(true));
+  if (night && !sleepWhy && !threat && Date.now() - (c.nightSmeltAt ?? 0) > 120000 && (I.count(bot, 'raw_iron') >= 3 || col.storageCount('raw_iron') >= 3) && col.furnaceBlock(bot)) add('smelt:iron', 'work', 34, () => c.nightSmelt());
 
   // --- jobs for the colony
   const pj = col.placeJob(c);
   if (pj) add(`place:${pj.item}`, 'work', 50, () => c.placeAtBase(pj.item, pj.spot));
   if (col.wantsGift(c)) add('share', 'social', 48, () => c.doShare());
-  if (I.foodCount(bot) < 4) add('food', 'work', food <= 12 ? 62 : 28, () => c.getFood());
+  if (!night) {
+    const tj = col.tidyJob(c);
+    if (tj) add('tidy:bed', 'work', 34, () => c.tidy(tj));
+  }
+  if (!night && !c.helper && c.mode === 'work' && hp >= 14 && (['miner', 'lumberjack', 'hunter'].includes(c.role) || (c.role === 'builder' && !col.projectReady()))) {
+    const lj = col.lootJob(c);
+    if (lj) add(`loot:${lj.place}`, 'work', 39, () => c.loot(lj));
+  }
+  if (I.foodCount(bot) < 4) add('food', 'work', food <= 12 || hp <= 10 ? 62 : food <= 16 ? 44 : 28, () => c.getFood());
+  // badly hurt and nothing to eat: rest on the lit plaza until health comes back
+  if (hp <= 8 && !hasFood && !threat) add('rest', 'survival', 58, () => c.rest());
   if (!c.helper) {
     const worn = c.wornTool();
     if (worn) add(`repair:${worn.kind}`, 'work', 52, () => c.replaceTool(worn));
     const up = nextUpgrade(c);
-    if (up) add(`upgrade:${up.item}`, 'work', I.toolTier(bot, 'pickaxe') < 1 ? 47 : 42, () => c.doUpgrade(up));
+    // stone tools are essential; the iron ladder competes with the colony's needs (food, the house)
+    if (up) add(`upgrade:${up.item}`, 'work', I.toolTier(bot, 'pickaxe') < 1 || (up.kind && I.toolTier(bot, up.kind) < 1) ? 47 : 36, () => c.doUpgrade(up));
   }
-  if (c.mode === 'home') add('home', 'idle', 40, () => c.doHome(false));
+  if (c.mode === 'home') add('home', 'idle', 40, () => c.doHome(night));
   else {
-    const role = c.role ?? 'lumberjack';
+    // night shift: woodcutters go down the mine, hunters guard the plaza; farmers (lit, fenced field),
+    // miners and the builder (by the plaza) carry on
+    const role = night ? ({ lumberjack: 'miner', hunter: 'guard' }[c.role] ?? c.role ?? 'miner') : c.role ?? 'lumberjack';
     const boost = (c.boost ?? 0) * 3;
     if (role === 'builder' && col.projectReady()) add('build', 'work', 45 + boost, () => col.runBuild(c));
-    else if (role === 'farmer') add('farm', 'work', 32 + boost, () => c.farm());
-    else if (role === 'hunter') add('hunt', 'work', 32 + boost, () => c.hunt());
+    else if (role === 'farmer') add('farm', 'work', 40 + boost, () => c.farm());
+    else if (role === 'hunter') add('hunt', 'work', 40 + boost, () => c.hunt());
     else if (role === 'guard') add('guard', 'idle', 30, () => c.guard(20000));
     else if (role === 'miner' || role === 'builder') add(`mine:${col.mineTarget(c)}`, 'work', 31 + boost, () => c.gather(col.mineTarget(c)));
     else add('gather:wood', 'work', 31 + boost, () => c.gather('wood'));
-    add('gather:any', 'work', 20, () => c.gather(col.gatherTarget(c)));
+    if (!night) add('gather:any', 'work', 20, () => c.gather(col.gatherTarget(c)));
+    else add('guard', 'idle', 22, () => c.guard(15000));
   }
   return out.sort((a, b) => b.score - a.score);
 }
@@ -157,7 +179,7 @@ export function chooseNaive(c) {
   if (c.deathRecord && Date.now() - c.deathRecord.at < DESPAWN_SAFE_MS) return { name: 'recover', cat: 'survival', run: () => c.recover() };
   if (c.mode === 'leaving') return { name: 'leave', cat: 'social', run: () => c.doLeave() };
   if (I.freeSlots(bot) < 4) return { name: 'deposit:full', cat: 'work', run: () => c.visitBase({ reason: 'full' }) };
-  if (!c.isDay()) return col.bedFor(c) ? { name: 'sleep', cat: 'survival', run: () => c.doSleep() } : { name: 'home:night', cat: 'survival', run: () => c.doHome(true) };
+  if (!c.isDay()) return col.bedFor(c) ? { name: 'sleep', cat: 'survival', run: () => c.doSleep('naive') } : { name: 'home:night', cat: 'survival', run: () => c.doHome(true) };
   if (c.mode === 'home') return { name: 'home', cat: 'idle', run: () => c.doHome(false) };
   const up = !c.helper && nextUpgrade(c);
   if (up) return { name: `upgrade:${up.item}`, cat: 'work', run: () => c.doUpgrade(up) };

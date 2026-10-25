@@ -13,7 +13,7 @@ import os from 'node:os';
 import { createRequire } from 'node:module';
 import { Rcon, RconDisconnected } from '../bridge/rcon.mjs';
 import path from 'node:path';
-import { loadConfig, ROOT } from './config.mjs';
+import { loadConfig, ROOT, DEFAULTS } from './config.mjs';
 import { Chatter } from './lines.mjs';
 import { sellPrice, buyPrice, itemFor } from './economy.mjs';
 import { Colonist } from '../bots/wild/colonist.mjs';
@@ -97,18 +97,28 @@ async function cmd(c) {
 
 const V = (o) => (o ? new Vec3(o.x, o.y, o.z) : null);
 const deathLog = [];
-// Settings shared with the city bridge (config.json, read-only here; wild-config.json wins):
-// language, colonistsMax, colonistsCaretaker, chatter (feature toggle), chatterFrequency.
+// Settings shared with the city bridge, re-read every 15 s (so a new cap applies without a restart).
+// The colonist cap: `colonistsMax` (or the older `maxColonists`) in wild-config.json wins, else
+// `colonistsMax` in the town's config.json (written by the settings page and tools/tune.mjs), else 3.
+// Also: language, colonistsCaretaker, chatter (feature toggle), chatterFrequency.
 const settingsNow = { colonistsMax: cfg.colonistsMax ?? cfg.maxColonists, caretaker: false, chatter: true, frequency: 'normal', language: 'en' };
 function readSharedSettings() {
-  let city = {};
-  try {
-    city = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
-  } catch {}
-  const pick = (k, d) => cfg[k] ?? city[k] ?? d;
-  settingsNow.colonistsMax = Math.max(0, Math.min(16, Number(pick('colonistsMax', cfg.maxColonists)) || 0));
+  const readJson = (f) => {
+    try {
+      return JSON.parse(fs.readFileSync(f, 'utf8'));
+    } catch {
+      return null;
+    }
+  };
+  const city = readJson(path.join(ROOT, 'config.json')) ?? {};
+  const wild = readJson(cfg.configFile) ?? cfg.userConfig ?? {};
+  const pick = (k, d) => wild[k] ?? city[k] ?? d;
+  const cap = wild.colonistsMax ?? wild.maxColonists ?? city.colonistsMax ?? DEFAULTS.maxColonists;
+  const prevCap = settingsNow.colonistsMax;
+  settingsNow.colonistsMax = Math.max(0, Math.min(16, Number(cap) || 0));
+  if (prevCap !== settingsNow.colonistsMax && logRing.length) log(`colonist cap: ${prevCap} -> ${settingsNow.colonistsMax}`);
   settingsNow.caretaker = pick('colonistsCaretaker', 'off') === 'on' || pick('colonistsCaretaker', false) === true;
-  settingsNow.chatter = cfg.chatter ?? city.features?.chatter ?? city.chatter ?? true;
+  settingsNow.chatter = wild.chatter ?? city.features?.chatter ?? city.chatter ?? true;
   settingsNow.frequency = pick('chatterFrequency', 'normal');
   settingsNow.language = pick('language', 'en');
   setLanguage(settingsNow.language);
@@ -130,9 +140,59 @@ const chatter = new Chatter({
 
 const colonists = new Map(); // name -> Colonist
 const blacklist = new Map(); // "x,y,z" -> until
+const lootTargets = new Map(); // "x,y,z" -> { pos, place, by }
+
+/** What a found chest belongs to, from the blocks around it. */
+function placeKind(bot, p) {
+  const names = [];
+  for (let dx = -4; dx <= 4; dx++) for (let dy = -3; dy <= 3; dy++) for (let dz = -4; dz <= 4; dz++) names.push(bot.blockAt(p.offset(dx, dy, dz))?.name ?? '');
+  const has = (re) => names.some((n) => re.test(n));
+  if (has(/^spawner$|^trial_spawner$|^vault$/)) return 'dungeon';
+  if (has(/obsidian|netherrack|magma_block/)) return 'portal';
+  if (has(/^rail$|cobweb/)) return 'mineshaft';
+  if (has(/^water$/) && has(/_planks$|_log$|_stairs$/)) return 'shipwreck';
+  if (has(/^bell$|hay_block|composter|_bed$/)) return 'village';
+  return 'ruin';
+}
+
+/** Door, outside and inside cells of a finished cabin. */
+function houseCells(h) {
+  const o = h.origin;
+  return { id: h.id, door: V({ x: o.x + 5, y: o.y + 1, z: o.z + 2 }), outside: V({ x: o.x + 5, y: o.y + 1, z: o.z + 0 }), inside: V({ x: o.x + 5, y: o.y + 1, z: o.z + 5 }), bed: V({ x: o.x + 7, y: o.y + 1, z: o.z + 7 }) };
+}
+
+/** The house bed assigned to a colonist (cabins: bed foot at origin + (7, 1, 7), door at + (5, 1, 2)). */
+function houseBedOf(c) {
+  const col = state.colony;
+  if (!col) return null;
+  col.bedOwners ??= {};
+  const houses = state.projects.filter((p) => p.done && p.type === 'cabin');
+  if (!houses.length) return null;
+  const online = new Set([...colonists.values()].filter((x) => x.running).map((x) => x.name));
+  let mine = houses.find((h) => col.bedOwners[h.id] === c.name);
+  if (!mine && !c.helper) {
+    mine = houses.find((h) => !col.bedOwners[h.id] || !online.has(col.bedOwners[h.id]));
+    if (mine) {
+      col.bedOwners[mine.id] = c.name;
+      save();
+    }
+  }
+  if (!mine) return null;
+  return houseCells(mine);
+}
+const badCells = new Set(); // cells where the server keeps rejecting moves
 let marketLock = null;
 let furnaceLock = null;
 const storageSnap = new Map(); // "x,y,z" -> [{name,count}]
+const chestSlots = new Map(); // "x,y,z" -> container size seen when it was last opened (27 or 54)
+const storageWanted = {}; // category -> { since, who, announced, retryAt }: a full chest waits for a second half
+// sold for nothing when storage is full (the market takes them; better than carrying them forever)
+const JUNK = /^(dirt|coarse_dirt|gravel|sand|cobblestone|cobbled_deepslate|andesite|diorite|granite|tuff|calcite|netherrack|rotten_flesh|spider_eye|poisonous_potato|wheat_seeds|beetroot_seeds|pumpkin_seeds|melon_seeds|.*_sapling|stick|bone|string|feather|arrow|flint|.*_flower|dandelion|poppy|kelp|seagrass)$/;
+function noteFull(cat) {
+  if (state.colony?.storageExtra?.[cat] || storageWanted[cat]) return;
+  storageWanted[cat] = { since: Date.now() };
+  log(`storage: the ${cat} chest is full`);
+}
 const gifts = new Map(); // giver name -> gift
 const scarce = new Map(); // kind -> until
 
@@ -168,6 +228,22 @@ const colony = {
     if (!c) return false;
     const r = cfg.worldBorder / 2 - 8;
     return Math.abs(p.x - c.x) > r || Math.abs(p.z - c.z) > r;
+  },
+  markBadCell(p) {
+    badCells.add(`${p.x},${p.y},${p.z}`);
+    log(`bad cell ${p}: paths avoid it`);
+  },
+  colonistsList: () => [...colonists.values()],
+  isInHouse(p) {
+    for (const pr of state.projects) {
+      if (!pr.done || !pr.box) continue;
+      const b = pr.box;
+      if (p.x >= b[0] + 2 && p.x <= b[3] - 2 && p.z >= b[2] + 2 && p.z <= b[5] - 2 && p.y > b[1] + 1 && p.y < b[4]) return true;
+    }
+    return false;
+  },
+  isBadCell(p) {
+    return badCells.size > 0 && (badCells.has(`${p.x},${p.y},${p.z}`) || badCells.has(`${p.x},${p.y - 1},${p.z}`));
   },
   blacklist(p) {
     blacklist.set(`${p.x},${p.y},${p.z}`, Date.now() + 120000);
@@ -240,8 +316,79 @@ const colony = {
     }
     return false;
   },
-  noteStorage(pos, items) {
-    storageSnap.set(`${pos.x},${pos.y},${pos.z}`, items.map((i) => ({ name: i.name, count: i.count })));
+  noteStorage(pos, items, slots = 27) {
+    const key = `${pos.x},${pos.y},${pos.z}`;
+    storageSnap.set(key, items.map((i) => ({ name: i.name, count: i.count })));
+    chestSlots.set(key, slots);
+  },
+  /** Free slots of a storage chest as last seen (unknown: assume room). */
+  chestFree(pos) {
+    const key = `${pos.x},${pos.y},${pos.z}`;
+    const items = storageSnap.get(key);
+    if (!items || !chestSlots.has(key)) return 27;
+    return Math.max(0, chestSlots.get(key) - items.length);
+  },
+  /** Does the chest at pos still take (some of) this item: a free slot, or a partial stack of it. */
+  chestTakes(pos, name) {
+    if (this.chestFree(pos) > 0) return true;
+    return (storageSnap.get(`${pos.x},${pos.y},${pos.z}`) ?? []).some((i) => i.name === name && i.count < 64 && !/_(pickaxe|axe|sword|shovel|hoe|helmet|chestplate|leggings|boots)$|^shield$|_bed$/.test(name));
+  },
+  /**
+   * Where an item goes into storage: its category chest, else (that one is full) misc, else any
+   * storage chest that still has room; null when all storage is full. A full category chest asks
+   * for a new chest (storageJob).
+   */
+  depositTarget(name) {
+    const st = this.base.storage;
+    const cat = this.storageCategory(name);
+    const own = st[cat] ?? st.misc;
+    if (this.chestTakes(own, name)) return own;
+    noteFull(cat);
+    for (const k of ['misc', 'stone', 'wood', 'food', 'ores']) if (st[k] && k !== cat && this.chestFree(st[k]) > 2) return st[k];
+    return null;
+  },
+  /** Low-value things the market takes off the colonists' hands (for nothing) when storage is full. */
+  isJunk: (name) => JUNK.test(name),
+  /** A storage chest is full: whoever has wood makes a new chest and puts it next to it (a double chest). */
+  storageJob(c) {
+    const col = state.colony;
+    const want = Object.keys(storageWanted).find((cat) => !col.storageExtra?.[cat]);
+    if (!want) return null;
+    const j = storageWanted[want];
+    if (j.who && j.who !== c.name && colonists.get(j.who)?.running && Date.now() - j.claimedAt < 90000) return null;
+    if (Date.now() < (j.retryAt ?? 0)) return null;
+    const planks = I.count(c.bot, I.PLANKS) + 4 * I.count(c.bot, I.LOG);
+    if (!I.find(c.bot, 'chest') && planks < 8) return null;
+    if (j.who !== c.name) {
+      j.who = c.name;
+      j.claimedAt = Date.now();
+    }
+    const p = col.storage[want];
+    return { cat: want, spot: V({ x: p.x + 1, y: p.y, z: p.z }), main: V(p), first: !j.announced };
+  },
+  /** The new chest is down (or the attempt failed): make sure it pairs with the old one. */
+  async storageChestPlaced(c, job, ok) {
+    const j = storageWanted[job.cat];
+    if (!j) return;
+    j.announced = true;
+    const q = job.spot;
+    const placed = /passed/i.test(await cmd(`execute if block ${q.x} ${q.y} ${q.z} chest`).catch(() => ''));
+    if (placed) {
+      // a hand-placed chest may face the wrong way and stay single: turn it (it is still empty)
+      if (!/passed/i.test(await cmd(`execute if block ${job.main.x} ${job.main.y} ${job.main.z} chest[type=right]`).catch(() => ''))) await cmd(`setblock ${q.x} ${q.y} ${q.z} chest[facing=south,type=left]`);
+      if (/passed/i.test(await cmd(`execute if block ${job.main.x} ${job.main.y} ${job.main.z} chest[type=right]`).catch(() => ''))) {
+        state.colony.storageExtra ??= {};
+        state.colony.storageExtra[job.cat] = { x: q.x, y: q.y, z: q.z };
+        chestSlots.set(`${job.main.x},${job.main.y},${job.main.z}`, 54);
+        delete storageWanted[job.cat];
+        log(`storage: ${c.name} made the ${job.cat} chest a double chest${ok ? '' : ' (with help)'}`);
+        event('wild.ev.chest', { name: c.name });
+        save();
+        return;
+      }
+    }
+    j.who = null;
+    j.retryAt = Date.now() + 60000;
   },
   storageCount(re) {
     let n = 0;
@@ -319,12 +466,119 @@ const colony = {
   },
 
   // beds ------------------------------------------------------------------
+  /**
+   * The colonist's bed: its own bed in a finished house (assigned once, reassigned when the owner is
+   * gone), else a camp bed by the fire (only until there are enough house beds).
+   */
   bedFor(c) {
-    const beds = state.colony?.bedsPlaced ?? [];
-    if (!beds.length || !c.bot) return null;
+    if (!c.bot || !state.colony) return null;
+    const own = houseBedOf(c);
+    if (own) return own.bed;
+    const beds = state.colony.bedsPlaced ?? [];
+    if (!beds.length) return null;
     const idx = [...colonists.keys()].indexOf(c.name) % beds.length;
-    const p = V(beds[idx]);
-    return p;
+    return V(beds[idx]);
+  },
+  houseOf: (c) => houseBedOf(c),
+  /**
+   * Why the colonist should sleep tonight, or null (then it works a safe night shift):
+   *   'insomnia' — two nights or more without sleep (phantoms would come; not when they are off),
+   *   'skip'     — the night is dangerous around the colony's work and everyone agrees to sleep it
+   *                through (only when no real player is awake: they would have to sleep too),
+   *   'hurt'     — low health.
+   */
+  sleepNeed(c) {
+    if (!c.bot?.time) return null;
+    if (c.bot.health <= 8) return 'hurt';
+    if (nightPlan.skip === nightOf(c.bot)) return 'skip';
+    if (phantomsOn && this.nightsAwake(c) >= 2) return 'insomnia';
+    return null;
+  },
+  nightsAwake(c) {
+    const day = nightOf(c.bot);
+    state.colony.slept ??= {};
+    const last = state.colony.slept[c.name] ?? (state.colony.slept[c.name] = day); // a newcomer starts rested
+    return day - last;
+  },
+  noteSlept(c) {
+    state.colony.slept ??= {};
+    state.colony.slept[c.name] = nightOf(c.bot);
+    save();
+  },
+  /** A camp bed by the fire (fallback when the house bed cannot be reached tonight). */
+  campBed(c) {
+    const beds = state.colony?.bedsPlaced ?? [];
+    if (!beds.length) return null;
+    const idx = [...colonists.keys()].indexOf(c.name) % beds.length;
+    return V(beds[idx]);
+  },
+  /** The finished house whose inside (incl. the attic) contains p, or null. */
+  houseAt(p) {
+    for (const h of state.projects) {
+      if (!h.done || h.type !== 'cabin') continue;
+      const o = h.origin;
+      if (p.x >= o.x + 2 && p.x < o.x + 9 && p.z >= o.z + 2 && p.z < o.z + 11 && p.y >= o.y + 1 && p.y < o.y + 9) return houseCells(h);
+    }
+    return null;
+  },
+  /** A camp bed nobody needs any more (everyone online has a house bed): dismantle it. */
+  tidyJob(c) {
+    const camp = state.colony?.bedsPlaced ?? [];
+    // two camp beds stay by the fire: the fallback when a house bed cannot be reached
+    if (camp.length <= 2 || !houseBedOf(c)) return null;
+    const online = [...colonists.values()].filter((x) => x.running && !x.helper);
+    if (online.some((x) => !houseBedOf(x))) return null;
+    return { spot: V(camp[0]), done: () => this.bedMissing(c, V(camp[0])) };
+  },
+  // looting chests of structures around the colony (ruined portals, mineshafts, villages, wrecks)
+  noteChests(c) {
+    if (!state.colony || !c.bot?.entity) return;
+    const bot = c.bot;
+    const ids = ['chest', 'barrel', 'trapped_chest'].map((n) => bot.registry.blocksByName[n]?.id).filter((x) => x != null);
+    const ours = new Set([...Object.values(state.colony.storage), ...Object.values(state.colony.storageExtra ?? {}), state.colony.market].map((p) => `${p.x},${p.y},${p.z}`));
+    const home = this.home();
+    state.looted ??= {};
+    const extra = Object.values(state.colony.storageExtra ?? {}).map((p) => `${p.x},${p.y},${p.z}`);
+    for (const p of bot.findBlocks({ matching: ids, maxDistance: 64, count: 16 })) {
+      const key = `${p.x},${p.y},${p.z}`;
+      const old = state.looted[key];
+      // done, or given up for good (dungeon, lava, too deep); "unreachable" is tried again later, twice
+      if (old && (old.reason !== 'unreachable' || (old.tries ?? 1) >= 3 || Date.now() - old.t < 900000)) continue;
+      if (ours.has(key) || extra.includes(key) || this.isProtected(p) || p.distanceTo(home) > 96) continue;
+      if (lootTargets.has(key)) continue;
+      const place = placeKind(bot, p);
+      // structures on the surface only: a chest deep in the rock (or by a spawner) is not worth digging to
+      const surface = p.y >= home.y - 12;
+      if (place === 'dungeon' || !surface) {
+        state.looted[key] = { t: Date.now(), by: null, place, items: 0, reason: place === 'dungeon' ? 'dungeon' : 'deep' };
+        log(`chest at ${key} (${place}) skipped: ${state.looted[key].reason}`);
+        save();
+        continue;
+      }
+      lootTargets.set(key, { pos: p, place, by: null, tries: (old?.tries ?? 0) });
+      log(`chest found at ${key} (${place})`);
+    }
+  },
+  lootJob(c) {
+    let best = null;
+    for (const [key, tgt] of lootTargets) {
+      if (tgt.by && tgt.by !== c.name && colonists.get(tgt.by)?.running) continue;
+      const d = tgt.pos.distanceTo(c.bot.entity.position);
+      if (!best || d < best.d) best = { key, tgt, d };
+    }
+    if (!best) return null;
+    best.tgt.by = c.name;
+    return { ...best.tgt, key: best.key };
+  },
+  lootDone(c, job, items, reason) {
+    lootTargets.delete(job.key);
+    state.looted ??= {};
+    state.looted[job.key] = { t: Date.now(), by: c.name, place: job.place, items: items.length, reason, tries: (job.tries ?? 0) + 1 };
+    if (items.length) {
+      this.stat('chestsLooted', 1);
+      event('wild.ev.loot', { name: c.name, place: job.place, what: items.slice(0, 4) });
+    }
+    save();
   },
   bedMissing(c, p) {
     state.colony.bedsPlaced = (state.colony.bedsPlaced ?? []).filter((b) => !(b.x === p.x && b.y === p.y && b.z === p.z));
@@ -445,6 +699,79 @@ const colony = {
   colonistLeft(c) {
     event('wild.ev.left', { name: c.name });
   },
+  /**
+   * Fallback when a leaving colonist could not deposit everything (stuck, far away, chests full):
+   * every item it still carries (armour and off-hand too) is moved server-side, unchanged (durability,
+   * enchantments), into a free slot of a storage chest — its category first — or into the bag of a
+   * colonist who stays. Returns how many stacks are still left on the colonist.
+   */
+  async handOver(c) {
+    const bot = c.bot;
+    if (!bot?.entity || c.dead || !state.colony || c.handingOver) return -1;
+    c.handingOver = true;
+    try {
+      const slotName = (i) => ({ 5: 'armor.head', 6: 'armor.chest', 7: 'armor.legs', 8: 'armor.feet', 45: 'weapon.offhand' })[i] ?? `container.${i >= 36 ? i - 36 : i}`;
+      const carried = bot.inventory.slots.map((it, i) => (it && i >= 5 && i <= 45 ? { it, i } : null)).filter(Boolean);
+      if (!carried.length) return 0;
+      const free = new Map(); // "x y z" -> [free slot numbers]
+      const freeIn = async (p) => {
+        const key = `${p.x} ${p.y} ${p.z}`;
+        if (!free.has(key)) {
+          const probe = await cmd(`data get block ${key}`).catch(() => '');
+          if (!/following block data/.test(probe) || !/chest|barrel/.test(c.bot.blockAt(new Vec3(p.x, p.y, p.z))?.name ?? 'chest')) free.set(key, []);
+          else {
+            const used = new Set((await readChest(p)).map((x) => x.slot));
+            free.set(key, [...Array(27).keys()].filter((k) => !used.has(k)));
+          }
+        }
+        return free.get(key);
+      };
+      const stayers = [...colonists.values()].filter((x) => x !== c && x.running && !x.dead && x.mode !== 'leaving' && x.bot?.entity);
+      const ok = (out) => /replaced|applied|modified/i.test(out ?? '') && !/no |not |error|unknown|invalid/i.test(out ?? '');
+      let moved = 0;
+      let left = 0;
+      for (const { it, i } of carried) {
+        const from = `from entity ${c.name} ${slotName(i)}`;
+        const cats = [this.storageCategory(it.name), 'misc', 'stone', 'wood', 'food', 'ores'];
+        let done = false;
+        const chests = [...new Set(cats)].flatMap((cat) => [state.colony.storage[cat], state.colony.storageExtra?.[cat]]).filter(Boolean);
+        for (const p of chests) {
+          const slots = await freeIn(p);
+          if (!slots.length) continue;
+          const k = slots.shift();
+          if (ok(await cmd(`item replace block ${p.x} ${p.y} ${p.z} container.${k} ${from}`).catch((e) => e.message))) {
+            done = true;
+            break;
+          }
+        }
+        for (const o of done ? [] : stayers) {
+          const k = o.bot.inventory.slots.findIndex((x, j) => j >= 9 && j <= 44 && !x && !o.reservedSlots?.has(j));
+          if (k < 0) continue;
+          (o.reservedSlots ??= new Set()).add(k);
+          setTimeout(() => o.reservedSlots?.delete(k), 5000);
+          if (ok(await cmd(`item replace entity ${o.name} ${slotName(k)} ${from}`).catch((e) => e.message))) {
+            done = true;
+            break;
+          }
+        }
+        if (done) {
+          await cmd(`item replace entity ${c.name} ${slotName(i)} with air`).catch(() => {});
+          moved++;
+        } else left++;
+      }
+      if (moved) {
+        log(`${c.name} handed over ${moved} stack(s) by RCON${left ? `, ${left} left (no room)` : ''}`);
+        this.stat('handedOver', moved);
+        for (const p of Object.values(state.colony.storage)) {
+          const items = await readChest(p);
+          storageSnap.set(`${p.x},${p.y},${p.z}`, items.map((x) => ({ name: x.id, count: x.count })));
+        }
+      }
+      return left;
+    } finally {
+      c.handingOver = false;
+    }
+  },
 
   // economy ------------------------------------------------------------------
   gatherTarget(c) {
@@ -470,10 +797,16 @@ const colony = {
   async buyFood(c) {
     const price = buyPriceFood();
     if (state.credits < price * 6) return false;
-    await c.goHome(4);
-    await c.goNear(this.base.market, 2, { timeout: 20000 });
-    state.credits -= price * 6;
+    state.credits = Math.round((state.credits - price * 6) * 100) / 100; // reserved now: no overspending
     state.spent += price * 6;
+    try {
+      await c.goHome(4);
+      await c.goNear(this.base.market, 2, { timeout: 20000 });
+    } catch (e) {
+      state.credits += price * 6;
+      state.spent -= price * 6;
+      throw e;
+    }
     state.bought.bread = (state.bought.bread ?? 0) + 6;
     await cmd(`give ${c.name} bread 6`);
     chatter.say(c, 'bought', { what: t('wild.what.bread', { n: 6 }), price: (price * 6).toFixed(1) });
@@ -683,6 +1016,13 @@ function chatNameFrom(prompt) {
 function nameFor(sessionId, helperOf = null) {
   if (helperOf) return `${helperOf.slice(0, 12)}Jr`;
   if (state.names[sessionId]) return state.names[sessionId];
+  const now = Date.now();
+  const active = (sid) => {
+    const s = state.sessions[sid];
+    return s && !s.ended && now - s.lastEvent < cfg.leaveAfterMinutes * 60000;
+  };
+  // names of chats that are over go back to the pool
+  for (const [sid, n] of Object.entries(state.names)) if (sid !== sessionId && !active(sid) && !colonists.has(n)) delete state.names[sid];
   const used = new Set(Object.values(state.names));
   let h = 0;
   for (const ch of sessionId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -765,6 +1105,116 @@ function poolCap() {
   return Math.min(settingsNow.colonistsMax, colonists.size + Math.max(0, spare));
 }
 
+/**
+ * A storage chest that is nearly full becomes a double chest (a second half placed east of it; the
+ * old half keeps its items). Without room, deposits fail and colonists would carry things forever.
+ */
+async function expandStorage() {
+  const col = state.colony;
+  if (!col) return;
+  col.storageExtra ??= {};
+  for (const [cat, p] of Object.entries(col.storage)) {
+    if (col.storageExtra[cat]) continue;
+    const used = storageSnap.get(`${p.x},${p.y},${p.z}`)?.length ?? 0;
+    if (used >= 24) noteFull(cat);
+    // a colonist with wood makes the chest (storageJob); the colony steps in after 3 minutes
+    if (!storageWanted[cat] || Date.now() - storageWanted[cat].since < 180000) continue;
+    const q = { x: p.x + 1, y: p.y, z: p.z };
+    const free = await cmd(`execute if block ${q.x} ${q.y} ${q.z} air`).catch(() => '');
+    if (!/passed/i.test(free)) continue;
+    await cmd(`setblock ${q.x} ${q.y} ${q.z} chest[facing=south,type=left]`);
+    const ok = await cmd(`execute if block ${p.x} ${p.y} ${p.z} chest[type=right]`).catch(() => '');
+    if (!/passed/i.test(ok)) {
+      await cmd(`setblock ${q.x} ${q.y} ${q.z} air`).catch(() => {});
+      continue;
+    }
+    col.storageExtra[cat] = q;
+    chestSlots.set(`${p.x},${p.y},${p.z}`, 54);
+    delete storageWanted[cat];
+    log(`storage: the ${cat} chest is now a double chest (placed by the colony)`);
+    save();
+  }
+}
+
+// ------------------------------------------------------------------ night
+// Sleep is a need, not a schedule: by default colonists work a safe night shift (mines, smelting,
+// the lit farm, guarding the plaza) and sleep when insomnia nears, when hurt, or when the whole colony
+// agrees to skip a dangerous night. players_sleeping_percentage is 100, so the night only passes when
+// every player sleeps — a real player who is awake (not a spectator) keeps it, and then nobody tries.
+let phantomsOn = true;
+const nightPlan = { skip: -1, checked: -1 };
+/** Day number of the current (or last) night: the evening and the following early morning share it. */
+const nightOf = (bot) => Math.floor(((bot?.time?.time ?? 0) - 12000) / 24000);
+
+async function planNight() {
+  const list = [...colonists.values()].filter((c) => c.running && !c.dead && c.bot?.entity && c.mode !== 'leaving');
+  const bot = list[0]?.bot;
+  if (!bot?.time) return;
+  const tod = bot.time.timeOfDay;
+  const night = !(tod < 12500 || tod > 23400);
+  const n = nightOf(bot);
+  if (!night || nightPlan.skip === n || tod > 21000) return;
+  // danger near the colony's work: hostiles within 16 blocks of the colonists (each counted once)
+  const seen = new Set();
+  for (const c of list)
+    for (const e of Object.values(c.bot.entities)) {
+      if (e === c.bot.entity || !c.combat?.isHostile(e) || seen.has(e.id)) continue;
+      if (e.position.distanceTo(c.bot.entity.position) < 16) seen.add(e.id);
+    }
+  const awake = (await onlinePlayers()).filter((p) => (bot.players[p]?.gamemode ?? 0) !== 3);
+  const dangerous = seen.size >= Math.max(3, list.length);
+  if (nightPlan.checked !== n) {
+    nightPlan.checked = n;
+    log(`night ${n}: ${seen.size} hostiles around, ${awake.length} real player(s) awake; sleepers: ${list.filter((c) => colony.sleepNeed(c)).map((c) => `${c.name} (${colony.sleepNeed(c)})`).join(', ') || 'none'}`);
+    if (!dangerous) chatter.say(list[Math.floor(Math.random() * list.length)], 'nightShift', {});
+  }
+  if (dangerous && !awake.length && list.length) {
+    nightPlan.skip = n;
+    log(`night ${n}: ${seen.size} hostiles around the colony — everyone sleeps it through`);
+    const c = list.find((x) => !x.helper) ?? list[0];
+    chatter.say(c, 'nightVote', {}, { urgent: true });
+    event('wild.ev.nightSkip', { n: seen.size });
+  }
+}
+
+/** Sends a colonist home for good: it deposits everything it carries, then disconnects (doLeave). */
+function retire(c, why) {
+  if (c.mode === 'leaving') return;
+  c.mode = 'leaving';
+  c.leavingSince = Date.now();
+  if (colony.builder === c) colony.builder = null;
+  log(`${c.name} retires (${why}): deposits its things, then leaves`);
+  c.interrupt?.('leaving');
+}
+
+/**
+ * The pool shrank (lower cap, fewer active chats): the surplus colonists retire — helpers first, then
+ * the colonists of the chats idle the longest; the builder last.
+ */
+function trimPool() {
+  const staying = [...colonists.values()].filter((c) => c.mode !== 'leaving' && !spawning.has(c.name));
+  const extra = staying.length - settingsNow.colonistsMax;
+  if (extra <= 0) return;
+  const last = (c) => state.sessions[c.sessionId]?.lastEvent ?? 0;
+  staying.sort((a, b) => b.helper - a.helper || (a === colony.builder) - (b === colony.builder) || (b.mode === 'home') - (a.mode === 'home') || last(a) - last(b));
+  for (const c of staying.slice(0, extra)) retire(c, `cap ${settingsNow.colonistsMax}`);
+}
+
+/** A leaving colonist that has not managed to leave in 4 minutes: hand its things over by RCON, disconnect. */
+async function leaveWatchdog() {
+  const now = Date.now();
+  for (const c of colonists.values()) {
+    if (c.mode !== 'leaving' || !c.running) continue;
+    c.leavingSince ??= now;
+    if (now - c.leavingSince < 240000 || c.forcedOut) continue;
+    c.forcedOut = true;
+    log(`${c.name} did not get home to leave: things handed over by RCON`);
+    await colony.handOver(c).catch((e) => log('hand over failed', e.message));
+    colony.colonistLeft(c);
+    c.quit('leaving');
+  }
+}
+
 const spawning = new Set();
 async function ensureColonist(s) {
   const name = nameFor(s.id);
@@ -775,13 +1225,13 @@ async function ensureColonist(s) {
     return;
   }
   if (spawning.has(name) || !colony.ready && colonists.size > 0) return;
-  if (colonists.size >= poolCap()) {
+  if ([...colonists.values()].filter((x) => x.mode !== 'leaving').length >= poolCap()) {
     // free a slot: the colonist of the chat that has been idle the longest goes to the tavern
     const idle = [...colonists.values()].filter((x) => x.mode === 'home' && !x.helper).sort((a, b) => (state.sessions[a.sessionId]?.lastEvent ?? 0) - (state.sessions[b.sessionId]?.lastEvent ?? 0))[0];
     const helper = [...colonists.values()].find((x) => x.helper);
     const victim = helper ?? idle;
     if (!victim) return;
-    victim.mode = 'leaving';
+    retire(victim, 'slot for an active chat');
     return;
   }
   spawning.add(name);
@@ -792,10 +1242,17 @@ async function ensureColonist(s) {
   }
 }
 
-async function spawnColonist({ name, session, helper = false, parent = null }) {
+async function spawnColonist({ name, session, helper = false, parent = null, leaving = false }) {
   const c = new Colonist({ name, colony, helper, chatName: session.chatName ?? '' });
   c.sessionId = session.id;
-  if (helper) c.parentSession = session.id;
+  if (leaving) {
+    c.mode = 'leaving'; // a retiree: deposits, then disconnects
+    c.leavingSince = Date.now();
+  }
+  if (helper) {
+    c.parentSession = session.id;
+    c.parentName = parent;
+  }
   colonists.set(name, c);
   try {
     await c.connect();
@@ -803,7 +1260,7 @@ async function spawnColonist({ name, session, helper = false, parent = null }) {
     colonists.delete(name);
     throw e;
   }
-  log(`${name} joined${helper ? ` (helper of ${parent})` : ''} for chat ${session.chatName ?? session.id.slice(0, 8)}`);
+  log(`${name} joined${helper ? ` (helper of ${parent})` : ''}${leaving ? ' to hand in its things' : ''} for chat ${session.chatName ?? session.id.slice(0, 8)}`);
   await cmd(`gamemode survival ${name}`);
   await setNametag(c, helper ? t('wild.tag.helper', { parent }) : session.chatName ?? t('wild.tag.chat', { id: session.id.slice(0, 4) }));
   if (!state.colony) {
@@ -813,8 +1270,10 @@ async function spawnColonist({ name, session, helper = false, parent = null }) {
     await cmd(`tp ${name} ${h.x} ${h.y} ${h.z}`);
   }
   colony.ready = true;
-  chatter.say(c, helper ? 'helperJoin' : 'hello', { name, parent }, { urgent: true });
-  event(helper ? 'wild.ev.joinedHelper' : 'wild.ev.joined', { name, parent });
+  if (!leaving) {
+    chatter.say(c, helper ? 'helperJoin' : 'hello', { name, parent }, { urgent: true });
+    event(helper ? 'wild.ev.joinedHelper' : 'wild.ev.joined', { name, parent });
+  }
   return c;
 }
 
@@ -888,14 +1347,20 @@ async function scanMarket() {
   if (!m || marketLock) return;
   marketLock = 'market';
   try {
-    const out = await cmd(`data get block ${m.x} ${m.y} ${m.z} Items`);
-    const items = parseItems(out);
+    const items = await readChest(m);
     if (!items.length) return;
     let total = 0;
     const what = [];
     for (const it of items) {
       const price = sellPrice(it.id, cfg.creditMultiplier);
-      if (price <= 0) continue;
+      if (price <= 0) {
+        // junk handed in because storage is full: Märt takes it away for nothing
+        if (JUNK.test(it.id)) {
+          await cmd(`item replace block ${m.x} ${m.y} ${m.z} container.${it.slot} with air`);
+          state.stats.junkTakenAway = (state.stats.junkTakenAway ?? 0) + it.count;
+        }
+        continue;
+      }
       await cmd(`item replace block ${m.x} ${m.y} ${m.z} container.${it.slot} with air`);
       total += price * it.count;
       state.sold[it.id] = (state.sold[it.id] ?? 0) + it.count;
@@ -915,6 +1380,21 @@ async function scanMarket() {
   } finally {
     marketLock = null;
   }
+}
+
+/**
+ * Items of a container block, one RCON call per entry: `data get ... Items` shortens long lists ("..."),
+ * so the whole list would lose everything after the first entries. [{slot, id, count}]
+ */
+async function readChest(p) {
+  const items = [];
+  for (let i = 0; i < 54; i++) {
+    const out = await cmd(`data get block ${p.x} ${p.y} ${p.z} Items[${i}]`).catch(() => '');
+    const it = parseItems(`[${out.slice(out.indexOf('{'))}]`)[0];
+    if (!it || !/following block data/.test(out)) break;
+    items.push(it);
+  }
+  return items;
 }
 
 /** Parses `data get block ... Items` output into [{slot, id, count}]. */
@@ -1055,9 +1535,14 @@ async function watchPlayers() {
   for (const n of names) {
     if (welcomed.has(n)) continue;
     welcomed.add(n);
-    if ((cfg.spectators ?? []).includes(n)) {
+    // the watcher(s): `spectators` in wild-config.json, or (empty) every real player — the server only
+    // listens on 127.0.0.1, so whoever joins is the owner
+    if (!cfg.spectators?.length || cfg.spectators.includes(n)) {
       await cmd(`op ${n}`);
-      if (state.colony) {
+      state.tpDone ??= {};
+      if (state.colony && !state.tpDone[n]) {
+        state.tpDone[n] = true; // once ever (saved); afterwards only the player's own [tp]/[follow] clicks move them
+        save();
         const h = colony.home();
         await cmd(`tp ${n} ${h.x} ${h.y + 12} ${h.z + 14}`);
       }
@@ -1076,7 +1561,7 @@ async function sendList(player) {
   for (const c of colonists.values()) {
     if (!c.running) continue;
     parts.push({ text: `  ${c.name}`, color: c.helper ? 'aqua' : 'yellow' });
-    parts.push({ text: ` · ${t(`wild.role.${c.role}`)} · ${c.task} `, color: 'gray' });
+    parts.push({ text: ` · ${ROLE_ICON[c.role] ?? ''} ${t(`wild.role.${c.role}`)} · ${taskText(c.task)} `, color: 'gray' });
     parts.push({ text: t('wild.list.tp'), color: 'green', click_event: { action: 'run_command', command: `/tp @s ${c.name}` }, hover_event: { action: 'show_text', value: t('wild.list.tpHover', { name: c.name }) } });
     parts.push({ text: ' ' });
     parts.push({ text: t('wild.list.follow'), color: 'aqua', click_event: { action: 'run_command', command: `/spectate ${c.name} @s` }, hover_event: { action: 'show_text', value: t('wild.list.followHover', { name: c.name }) } });
@@ -1091,58 +1576,97 @@ async function sendList(player) {
   await cmd(`scoreboard players enable ${player} colony_list`).catch(() => {});
 }
 
-// sidebar: one line per colonist (name, role, health, food, task), refreshed when it changes
-const sidebarLines = new Map();
-async function updateSidebar() {
-  if (!sidebarReady) {
-    await cmd(`scoreboard objectives add colony dummy ${JSON.stringify({ text: t('wild.sidebar.title'), color: 'gold' })}`).catch(() => {});
-    await cmd(`scoreboard objectives modify colony displayname ${JSON.stringify({ text: t('wild.sidebar.title'), color: 'gold' })}`).catch(() => {});
-    await cmd('scoreboard objectives setdisplay sidebar colony');
-    await cmd('scoreboard objectives modify colony numberformat blank');
-    await cmd('scoreboard objectives add colony_list trigger').catch(() => {});
-    await cmd('scoreboard players enable @a colony_list').catch(() => {});
-    sidebarReady = true;
+// Tab list: each colonist's team suffix carries chat name, role, health and task (updated on change).
+// Sidebar: the colony's economy panel (day, food, wood, stone, iron, till, deaths today, construction).
+const ROLE_ICON = { miner: '⛏', lumberjack: '🪓', farmer: '🌾', hunter: '🏹', guard: '🛡', builder: '🔨' };
+const tabSuffix = new Map();
+async function updateTab() {
+  for (const c of colonists.values()) {
+    if (!c.running || !c.bot?.entity) continue;
+    const s = state.sessions[c.sessionId];
+    const chat = c.helper ? t('wild.tag.helper', { parent: c.parentName ?? '' }) : s?.chatName ?? t('wild.tag.chat', { id: (c.sessionId ?? '').slice(0, 4) });
+    const hp = c.dead ? '☠' : `❤${Math.round(c.bot.health ?? 0)}`;
+    const text = ` · ${chat} · ${ROLE_ICON[c.role] ?? ''} ${t(`wild.role.${c.role}`)} ${hp} · ${taskText(c.task)}`;
+    if (tabSuffix.get(c.name) === text) continue;
+    tabSuffix.set(c.name, text);
+    const team = `w_${c.name}`.slice(0, 16);
+    await cmd(`team modify ${team} suffix ${JSON.stringify({ text, color: 'gray' })}`).catch(() => {});
   }
-  const list = [...colonists.values()].filter((c) => c.running);
-  const header = `#till`;
+}
+
+/** Short localized description of an action id ("mine:iron" -> "mining iron"). */
+function taskText(task) {
+  const [kind, arg] = String(task ?? '').split(':');
+  const what = arg ? (t(`wild.what.${arg}`) !== `wild.what.${arg}` ? t(`wild.what.${arg}`) : itemName(arg)) : '';
+  const key = `wild.task.${kind}`;
+  const s = t(key, { what });
+  return s === key ? kind : s;
+}
+
+const panelLines = new Map();
+let panelReady = false;
+async function updatePanel() {
+  if (!panelReady) {
+    await cmd(`scoreboard objectives add colony dummy ${JSON.stringify({ text: t('wild.sidebar.title'), color: 'gold' })}`).catch(() => {});
+    await cmd('scoreboard objectives add colony_list trigger').catch(() => {});
+    panelReady = true;
+  }
+  // re-applied every time: cheap, and survives a server-side reset of the display slot
+  await cmd(`scoreboard objectives modify colony displayname ${JSON.stringify({ text: t('wild.sidebar.title'), color: 'gold' })}`);
+  await cmd('scoreboard objectives setdisplay sidebar colony');
+  await cmd('scoreboard objectives modify colony numberformat blank');
+  const anyBot = [...colonists.values()].find((c) => c.running && c.bot?.time)?.bot;
+  const day = anyBot ? Math.floor((anyBot.time.age ?? 0) / 24000) + 1 : 1;
+  const night = anyBot ? !(anyBot.time.timeOfDay < 12500 || anyBot.time.timeOfDay > 23400) : false;
+  const food = colony.storageCount(/^cooked_|^bread$|^baked_potato$|^apple$|^carrot$/) + [...colonists.values()].reduce((n, c) => n + (c.bot?.entity ? I.foodCount(c.bot) : 0), 0);
+  const today = deathLog.filter((d) => Date.now() - d.t < 20 * 60000).length; // a Minecraft day is 20 minutes
+  const pr = state.projects.find((x) => !x.done);
+  const done = state.projects.filter((x) => x.done).length;
+  const rows = [
+    ['day', 'gold', { day, n: colonists.size }],
+    night ? ['night', 'aqua', {}] : null,
+    ['food', 'white', { n: food }],
+    ['wood', 'white', { n: colony.storageCount(I.LOG) + Math.floor(colony.storageCount(I.PLANKS) / 4) }],
+    ['stone', 'white', { n: colony.storageCount(I.STONE_DROP) }],
+    ['iron', 'white', { n: colony.storageCount(/^iron_ingot$/) + colony.storageCount(/^raw_iron$/) }],
+    ['coal', 'white', { n: colony.storageCount(/^coal$|^charcoal$/) }],
+    ['till', 'yellow', { credits: state.credits.toFixed(0) }],
+    ['deaths', today ? 'red' : 'gray', { n: today }],
+    pr ? ['building', 'green', { house: t(`wild.house.${pr.type}`), pct: Math.floor((100 * pr.placed) / pr.total) }] : null,
+    ['houses', 'gray', { n: done }],
+  ].filter(Boolean);
   const want = new Map();
-  want.set(header, { score: 99, text: [{ text: t('wild.sidebar.till', { credits: state.credits.toFixed(0) }), color: 'gold' }] });
-  list.forEach((c, i) => {
-    const b = c.bot;
-    const hp = c.dead ? '☠' : `❤${Math.round(b?.health ?? 0)}`;
-    const food = `🍗${b?.food ?? 0}`;
-    want.set(`#c${i}`, { score: 90 - i, text: [{ text: c.name, color: c.helper ? 'aqua' : 'yellow' }, { text: ` ${t(`wild.role.${c.role}`)} `, color: 'gray' }, { text: `${hp} ${food} `, color: 'white' }, { text: shortTask(c.task), color: 'dark_gray' }] });
-  });
+  rows.forEach(([key, color, params], i) => want.set(`wild_p${String(i).padStart(2, '0')}`, { score: 50 - i, text: { text: t(`wild.panel.${key}`, params), color } }));
   for (const [holder, line] of want) {
-    const key = JSON.stringify(line);
-    if (sidebarLines.get(holder) === key) continue;
-    sidebarLines.set(holder, key);
+    const k = JSON.stringify(line);
+    if (panelLines.get(holder) === k) continue;
+    panelLines.set(holder, k);
     await cmd(`scoreboard players set ${holder} colony ${line.score}`);
     await cmd(`scoreboard players display name ${holder} colony ${JSON.stringify(line.text)}`);
   }
-  for (const holder of [...sidebarLines.keys()]) {
+  for (const holder of [...panelLines.keys()]) {
     if (want.has(holder)) continue;
-    sidebarLines.delete(holder);
+    panelLines.delete(holder);
     await cmd(`scoreboard players reset ${holder} colony`);
   }
-  // [list] trigger: a player clicked "refresh"
+  // [refresh list] trigger
   for (const n of await onlinePlayers()) {
     const out = await cmd(`scoreboard players get ${n} colony_list`).catch(() => '');
-    if (/has (\d+)/.test(out) && Number(out.match(/has (\d+)/)[1]) > 0) {
+    const m = out.match(/has (\d+)/);
+    if (m && Number(m[1]) > 0) {
       await cmd(`scoreboard players set ${n} colony_list 0`);
       await cmd(`scoreboard players enable ${n} colony_list`);
       await sendList(n);
     }
   }
 }
-let sidebarReady = false;
-const shortTask = (task) => String(task ?? '').replace(/^upgrade:/, '↑').replace(/^gather:/, '').replace(/^mine:/, '⛏').slice(0, 14);
 
 async function buyBeds() {
   const col = state.colony;
   if (!col) return;
   const placed = (col.bedsPlaced ?? []).length + (col.placeJobs ?? []).filter((j) => /_bed$/.test(j.item)).length;
-  const want = Math.min(colonists.size, col.beds.length);
+  const homeless = [...colonists.values()].filter((x) => x.running && !x.helper && !houseBedOf(x)).length;
+  const want = Math.min(homeless, col.beds.length);
   if (placed >= want) return;
   const price = buyPrice('red_bed');
   // beds come after the first house batch is affordable: keep a reserve for construction
@@ -1204,6 +1728,7 @@ function renderEvent(e) {
   if (typeof p.item === 'string') p.item = itemName(p.item);
   if (Array.isArray(p.what)) p.what = p.what.map(([n, id]) => `${n} ${itemName(id)}`).join(', ');
   if (typeof p.house === 'string') p.house = t(`wild.house.${p.house}`);
+  if (typeof p.place === 'string') p.place = t(`wild.place.${p.place}`);
   if (typeof p.cause === 'string') p.cause = t(`wild.cause.${p.cause}`, { mob: p.killer ? mobName(p.killer) : '?' });
   return { t: e.t, text: t(e.key, p) };
 }
@@ -1302,11 +1827,18 @@ setInterval(readSharedSettings, 15000);
 await ensureRcon();
 for (const c of [
   'difficulty normal', 'gamerule mob_griefing false', 'gamerule keep_inventory false', 'gamerule respawn_radius 0',
-  'gamerule players_sleeping_percentage 50', 'gamerule send_command_feedback false', 'gamerule advance_time true',
+  'gamerule players_sleeping_percentage 100', 'gamerule send_command_feedback false', 'gamerule advance_time true',
   'gamerule spawn_monsters true', 'gamerule show_death_messages true',
 ]) {
   const out = await cmd(c).catch((e) => e.message);
   if (/unknown|incorrect|invalid/i.test(out)) log(`${c}: ${out}`);
+}
+{
+  // phantoms (insomnia) on? Then colonists must sleep at least every third night.
+  const out = (await cmd('gamerule spawn_phantoms').catch(() => '')) || '';
+  const legacy = /unknown|incorrect|invalid/i.test(out) ? await cmd('gamerule doInsomnia').catch(() => '') : out;
+  phantomsOn = !/false/i.test(legacy);
+  log(`phantoms ${phantomsOn ? 'on' : 'off'} (${legacy.trim()})`);
 }
 if (state.colony) {
   if (!state.colony.drained) await drain();
@@ -1327,8 +1859,17 @@ server.listen(cfg.port, '127.0.0.1', () => {
 // chats that were active before a restart get their colonists back
 setTimeout(() => {
   const recent = Object.values(state.sessions).filter((s) => !s.ended && Date.now() - s.lastEvent < cfg.leaveAfterMinutes * 60000).sort((a, b) => b.lastEvent - a.lastEvent);
+  const back = recent.slice(0, settingsNow.colonistsMax);
+  // colonists that were online before the restart but no longer fit under the cap come back once
+  // to put what they carry into storage, then leave
+  const keep = new Set(back.map((s) => state.names[s.id]));
+  const retirees = (state.online ?? []).filter((o) => o.name && !keep.has(o.name) && state.sessions[o.session] && state.names[o.session] === o.name);
   (async () => {
-    for (const s of recent.slice(0, cfg.maxColonists)) await ensureColonist(s).catch((e) => log('respawn failed', e.message));
+    for (const s of back) await ensureColonist(s).catch((e) => log('respawn failed', e.message));
+    for (const o of retirees) {
+      if (colonists.has(o.name)) continue;
+      await spawnColonist({ name: o.name, session: state.sessions[o.session], leaving: true }).catch((e) => log(`retiree ${o.name} failed`, e.message));
+    }
   })();
 }, 1500);
 
@@ -1341,12 +1882,26 @@ setInterval(async () => {
     greetings();
     if (tickN % 3 === 0) await scanMarket();
     if (tickN % 3 === 1) await watchPlayers();
-    if (tickN % 3 === 2) await updateSidebar();
+    if (tickN % 3 === 2) await updatePanel();
+    if (tickN % 3 === 0) await updateTab();
     if (tickN % 180 === 90) for (const n of await onlinePlayers()) await sendList(n);
     if (tickN % 5 === 2) await buyBeds();
     if (tickN % 5 === 4) await builder.tick();
     if (tickN % 5 === 3) assignRoles();
+    if (tickN % 15 === 7) for (const c of colonists.values()) if (c.running && !c.dead) colony.noteChests(c);
     if (tickN % 5 === 1) await caretaker();
+    if (tickN % 5 === 0 && colony.ready) trimPool();
+    if (tickN % 5 === 0) await leaveWatchdog();
+    if (tickN % 15 === 11) await expandStorage();
+    if (tickN % 5 === 3) await planNight();
+    if (tickN % 15 === 0) {
+      // who is online (and carries the colony's things): a restart with a lower cap lets the extra ones retire
+      const online = [...colonists.values()].filter((c) => c.running && !c.helper && c.mode !== 'leaving').map((c) => ({ name: c.name, session: c.sessionId }));
+      if (JSON.stringify(online) !== JSON.stringify(state.online ?? [])) {
+        state.online = online;
+        save();
+      }
+    }
     for (const c of colonists.values()) {
       if (c.mode === 'leaving' && !c.running) colonists.delete(c.name);
     }

@@ -2,13 +2,15 @@
 // server/ (read-only; the city server is not touched and may keep running), writes its own
 // server.properties (127.0.0.1:25567, RCON 25577 with a new random password, survival, normal difficulty),
 // accepts the EULA the same way server/ did, and adds a start script. Safe to run again: existing files
-// and the world are kept unless --force is given for server.properties.
+// and the world are kept unless --force is given for server.properties. Also writes an empty
+// wild-config.json. Everything it creates is git-ignored (world, RCON password, colony state).
 //
 //   node wild/setup.mjs [--port 25567] [--rcon-port 25577] [--force]
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { ROOT, FORBIDDEN_PORTS } from './config.mjs';
+import { t, setLanguage } from '../bridge/i18n.mjs';
 
 const args = process.argv.slice(2);
 const opt = (k, d) => (args.includes(`--${k}`) ? args[args.indexOf(`--${k}`) + 1] : d);
@@ -47,11 +49,21 @@ if (!fs.existsSync(propsFile) || force) {
 }
 fs.writeFileSync(path.join(dst, 'start-server.cmd'), '@echo off\r\ncd /d "%~dp0"\r\njava -Xms512M -Xmx2G -jar paper.jar nogui\r\n');
 fs.writeFileSync(path.join(dst, 'start-server.sh'), '#!/bin/sh\ncd "$(dirname "$0")"\nexec java -Xms512M -Xmx2G -jar paper.jar nogui\n');
-console.log(`
-Wild server ready in ${dst}
-  1. start it:      wild-server/start-server.cmd   (first start generates the world, ~1 min)
-  2. start colony:  node wild/colony.mjs            (or start-wild.cmd: both at once)
-  3. city bridge:   set "Wild colony" to "on" at http://127.0.0.1:7777/ (or builder mode "wild")
-  4. play along:    Minecraft 1.21.11 -> Multiplayer -> 127.0.0.1:${port}
-  status page:      http://127.0.0.1:7785/
-`);
+try {
+  fs.chmodSync(path.join(dst, 'start-server.sh'), 0o755);
+} catch {}
+
+// wild-config.json (optional, git-ignored): colony-only settings. The colonist cap normally comes from the
+// town's config.json (colonistsMax: settings page, tools/tune.mjs); a value here overrides it.
+const wildCfg = path.join(ROOT, 'wild-config.json');
+if (!fs.existsSync(wildCfg)) {
+  fs.writeFileSync(wildCfg, JSON.stringify({ port: 7785, spectators: [], seedSite: null }, null, 2) + '\n');
+  console.log('wrote wild-config.json');
+}
+
+let language = 'en';
+try {
+  language = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8')).language ?? 'en';
+} catch {}
+setLanguage(language);
+console.log(`\n${t('wild.setup.done', { dir: dst, port })}\n`);

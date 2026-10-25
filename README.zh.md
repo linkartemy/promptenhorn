@@ -154,6 +154,22 @@ node configure.mjs language de     # 更改语言
 
 为了提供进度成就和暂停菜单中的“镇政厅”按钮，bridge 会自行把 `datapack/promptenhorn` 数据包安装到 `server/world/datapacks/` 并重新加载数据包。暂停菜单按钮会在下次服务器重启后出现（对话框只在启动时加载）；聊天栏中的“[Town hall]”链接则立即可用。镇政厅窗口还可以在浏览器中打开实时地图。
 
+## 殖民者模式
+
+城市之外的第二种模式：每个活跃的对话还会在一个**独立**的 Minecraft 服务器上的生存殖民地里得到一名**殖民者**。殖民者是真正的玩家机器人（Mineflayer），由脚本化 AI 驱动，不用 LLM、不耗 token：砍树、挖自己的矿井、升级工具和盔甲、冶炼、战斗、种地、打猎、搜刮附近遗迹的箱子、共用仓库、在市场出售剩余物资，并用收入亲手建造小屋。城市不受影响。
+
+```
+node wild/setup.mjs        # 一次：创建 wild-server/（从 server/ 复制 Paper，独立世界，新的 RCON 密码，端口 25567）
+wild\start-wild.cmd        # Windows：在两个窗口中启动殖民地服务器和殖民地
+sh wild/start-wild.sh      # macOS / Linux：同上（Ctrl+C 同时停止）
+```
+
+然后在 http://127.0.0.1:7777/ 打开 **“殖民者”**（城市的桥接程序必须在运行，它会转发对话事件）。停止：`node wild/stop.mjs`（每个殖民者先把东西放进仓库），再在服务器窗口输入 `stop`。`wild-server/`、`wild-state.json` 和 `wild-config.json` 已被 git 忽略。
+
+**数量**：每个活跃对话一名，最多为城市 `config.json` 中的 `colonistsMax`（默认 3）——可在设置页修改，用 `node tools/tune.mjs --apply`（或 `/promptenhorn-tune`）自动选择，或在 `wild-config.json` 中用 `colonistsMax`（也可写 `maxColonists`）覆盖。上限降低时，多出的殖民者会先把东西放进仓库再离开。
+
+**观看**：Minecraft 1.21.11，服务器 `127.0.0.1:25567`。只有第一次进入时会把你放到广场上方一次，之后只有你自己的点击会移动你：**[tp]** 传送到殖民者，**[follow]**（`/spectate`）。**Tab** 列出每个殖民者的对话、职业、生命和任务；**侧边栏**显示殖民地经济。状态页：http://127.0.0.1:7785/。
+
 ## 按电脑调优
 
 `node tools/tune.mjs` 会测量电脑（内存、CPU、正在运行的程序），并以只读方式测量运行中的服务器（TPS、MSPT、区块、实体），然后给出方案：启动脚本的 Java 内存与参数、`view-distance` / `simulation-distance`、Paper/Spigot/Bukkit 的 tick 优化，以及桥接的上限（`builderBotsMax`、`colonistsMax`、翻新速度、生活密度）。只有加上 `--apply` 才会写入，写入前每个文件都会备份到 `backups/tune/<时间>/`；之后重启服务器和桥接。

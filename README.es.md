@@ -154,6 +154,22 @@ Detalles para autores de generadores: `docs/generator-contract.md`.
 
 Para los logros y el botón "Ayuntamiento" del menú de pausa, el puente instala por sí mismo el paquete de datos `datapack/promptenhorn` en `server/world/datapacks/` y recarga los paquetes de datos. El botón del menú de pausa aparece tras el siguiente reinicio del servidor (los diálogos solo se cargan al arrancar); el enlace "[Town hall]" del chat funciona al momento. La ventana del ayuntamiento también puede abrir el mapa en vivo en tu navegador.
 
+## Modo «Colonos»
+
+Un segundo modo junto a la ciudad: cada chat activo recibe además un **colono** en una colonia de supervivencia en su **propio** servidor de Minecraft. Los colonos son bots jugadores reales (Mineflayer) con una IA programada, sin LLM y sin tokens: talan, cavan su mina, mejoran herramientas y armadura, funden, luchan, cultivan, cazan, saquean cofres de ruinas cercanas, comparten un almacén, venden excedentes y con ello construyen cabañas a mano. La ciudad no se ve afectada.
+
+```
+node wild/setup.mjs        # una vez: crea wild-server/ (Paper de server/, mundo propio, nueva contraseña RCON, puerto 25567)
+wild\start-wild.cmd        # Windows: el servidor de la colonia y la colonia en dos ventanas
+sh wild/start-wild.sh      # macOS / Linux: lo mismo (Ctrl+C detiene ambos)
+```
+
+Después active **«Colonos»** en http://127.0.0.1:7777/ (el puente de la ciudad debe estar en marcha y reenvía los eventos de los chats). Para parar: `node wild/stop.mjs` (cada colono guarda antes todo en el almacén) y luego `stop` en la ventana del servidor. `wild-server/`, `wild-state.json` y `wild-config.json` están en .gitignore.
+
+**Cuántos**: uno por chat activo, como máximo `colonistsMax` (3 por defecto) en el `config.json` de la ciudad: en la página de ajustes, con `node tools/tune.mjs --apply` (o `/promptenhorn-tune`) o con `colonistsMax` (también `maxColonists`) en `wild-config.json`. Si el límite baja, los colonos sobrantes guardan sus cosas y se van.
+
+**Mirar**: Minecraft 1.21.11, `127.0.0.1:25567`. Solo en tu primera visita se te coloca una vez sobre la plaza; después solo te mueven tus propios clics: **[tp]** a un colono, **[follow]** (`/spectate`). **Tab** muestra cada colono con chat, rol, salud y tarea; la **barra lateral**, la economía de la colonia. Estado: http://127.0.0.1:7785/.
+
 ## Ajuste al equipo
 
 `node tools/tune.mjs` mide el equipo (RAM, CPU, qué está en marcha) y, solo leyendo, el servidor en marcha (TPS, MSPT, chunks, entidades), y muestra un plan: memoria y flags de Java de los scripts de inicio, `view-distance` / `simulation-distance`, ahorros de ticks en Paper/Spigot/Bukkit y los límites del puente (`builderBotsMax`, `colonistsMax`, velocidad de reforma, densidad de vida). Solo escribe con `--apply`, guardando antes cada archivo en `backups/tune/<hora>/`; luego reinicia el servidor y el puente.

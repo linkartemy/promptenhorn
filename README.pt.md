@@ -154,6 +154,22 @@ Detalhes para autores de geradores: `docs/generator-contract.md`.
 
 Para as conquistas e o botão "Prefeitura" no menu de pausa, a ponte instala sozinha o pacote de dados `datapack/promptenhorn` em `server/world/datapacks/` e recarrega os pacotes de dados. O botão do menu de pausa aparece depois do próximo reinício do servidor (os diálogos só são carregados na inicialização); o link "[Town hall]" no chat funciona na hora. A janela da prefeitura também pode abrir o mapa ao vivo no seu navegador.
 
+## Modo «Colonos»
+
+Um segundo modo ao lado da cidade: cada chat ativo recebe também um **colono** numa colônia de sobrevivência no seu **próprio** servidor Minecraft. Os colonos são bots jogadores reais (Mineflayer) com uma IA programada, sem LLM e sem tokens: cortam madeira, cavam a sua mina, melhoram ferramentas e armadura, fundem, lutam, cultivam, caçam, saqueiam baús de ruínas próximas, compartilham um armazém, vendem excedentes e constroem cabanas à mão. A cidade não é afetada.
+
+```
+node wild/setup.mjs        # uma vez: cria wild-server/ (Paper de server/, mundo próprio, nova senha RCON, porta 25567)
+wild\start-wild.cmd        # Windows: o servidor da colônia e a colônia em duas janelas
+sh wild/start-wild.sh      # macOS / Linux: o mesmo (Ctrl+C para ambos)
+```
+
+Depois ative **«Colonos»** em http://127.0.0.1:7777/ (a ponte da cidade precisa estar rodando; ela encaminha os eventos dos chats). Para parar: `node wild/stop.mjs` (cada colono guarda primeiro tudo no armazém) e depois `stop` na janela do servidor. `wild-server/`, `wild-state.json` e `wild-config.json` estão no .gitignore.
+
+**Quantos**: um por chat ativo, no máximo `colonistsMax` (padrão 3) no `config.json` da cidade — página de configurações, `node tools/tune.mjs --apply` (ou `/promptenhorn-tune`) ou `colonistsMax` (também `maxColonists`) em `wild-config.json`. Se o limite baixar, os colonos a mais guardam as suas coisas e saem.
+
+**Ver**: Minecraft 1.21.11, `127.0.0.1:25567`. Só na sua primeira visita você é colocado uma vez sobre a praça; depois só os seus próprios cliques movem você: **[tp]** até um colono, **[follow]** (`/spectate`). **Tab** mostra cada colono com chat, função, vida e tarefa; a **barra lateral**, a economia da colônia. Estado: http://127.0.0.1:7785/.
+
 ## Ajuste ao computador
 
 `node tools/tune.mjs` mede o computador (RAM, CPU, o que está rodando) e, só lendo, o servidor em execução (TPS, MSPT, chunks, entidades), e mostra um plano: memória e flags Java dos scripts de início, `view-distance` / `simulation-distance`, economia de ticks no Paper/Spigot/Bukkit e os limites da ponte (`builderBotsMax`, `colonistsMax`, velocidade da reforma, densidade de vida). Só escreve com `--apply`, copiando antes cada arquivo para `backups/tune/<hora>/`; depois reinicie o servidor e a ponte.

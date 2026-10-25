@@ -49,6 +49,8 @@ export const STORAGE_RESERVE = [
   [/^cooked_|^bread$|^baked_potato$|^apple$/, 32], [/^beef$|^porkchop$|^mutton$|^chicken$|^rabbit$/, 16],
   [/^torch$/, 32], [/_pickaxe$|_sword$|_axe$|_shovel$|^shield$/, 6], [/_helmet$|_chestplate$|_leggings$|_boots$/, 8],
   [/^dirt$/, 32], [/_bed$/, 4], [/^white_wool$|_wool$/, 9], [/^sand$/, 32], [/^leather$/, 16], [/^crafting_table$|^furnace$/, 2],
+  // loot worth keeping (ruined portals, villages): stored, not sold, up to a stack
+  [/^gold_nugget$|^iron_nugget$|^golden_apple$|^golden_carrot$|^obsidian$|^fire_charge$|^flint_and_steel$/, 64], [/^gold_ingot$/, 16],
 ];
 /** Never sold or stored: trash the colonist simply drops (it despawns). */
 export const TRASH = /^(wheat_seeds|beetroot_seeds|pumpkin_seeds|melon_seeds|poisonous_potato|spider_eye|.*_sapling|stick_never|gravel_never)$/;

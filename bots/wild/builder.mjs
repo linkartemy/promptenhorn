@@ -173,6 +173,14 @@ export class Builder {
     while (p.placed < this.batch.to) {
       c.check();
       const b = list[p.placed];
+      // the crew only helps a builder who is on the site: far away (trapped, lost) -> walk there first
+      if (bot.entity.position.distanceTo(b.pos) > 9) {
+        await c.goNear(b.pos, 3, { timeout: 30000 });
+        if (bot.entity.position.distanceTo(b.pos) > 9) {
+          this.save();
+          return;
+        }
+      }
       pending.delete(b.pos.toString());
       this.upcoming = list.slice(p.placed, p.placed + 30).map((q) => q.pos);
       if (b.t.name !== 'air') {
@@ -212,6 +220,15 @@ export class Builder {
     }
     p.done = true;
     p.finished = Date.now();
+    // the builder may be inside (attic, behind the closed door): out through the front door
+    const o0 = p.origin;
+    const inside = (q) => q.x >= o0.x + 2 && q.x <= o0.x + 8 && q.z >= o0.z + 2 && q.z <= o0.z + 10 && q.y > o0.y;
+    for (const col of [c, ...this.colony.colonistsList()]) {
+      if (col?.bot?.entity && inside(col.bot.entity.position)) {
+        await this.cmd(`tp ${col.name} ${o0.x + 5.5} ${o0.y + 1} ${o0.z + 0.5}`);
+        this.log(`${col.name} let out of the finished house`);
+      }
+    }
     p.fixedAtEnd = fixed;
     this.event('wild.ev.projectDone', { house: p.type, hand: p.hand, rcon: p.rcon });
     this.chatter.say(c, 'houseDone', { house: t(`wild.house.${p.type}`) }, { urgent: true });

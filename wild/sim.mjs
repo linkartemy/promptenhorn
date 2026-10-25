@@ -1,11 +1,13 @@
 // Development: simulates Claude Code chats against the colony (POST /event), like the bridge would forward.
-//   node wild/sim.mjs [chats=2] [minutes=25] [--port 7785]
+//   node wild/sim.mjs [chats=2] [minutes=25] [--port 7785] [--sessions id1,id2,...]
+// --sessions continues existing chats (their colonists keep their names and inventories) instead of new ones.
 // Each chat: SessionStart, a prompt, then bursts of tool calls with pauses; sometimes failing tests,
 // commits and a subagent (helper colonist). Chat 2 goes idle for a while in the middle.
 const args = process.argv.slice(2);
 const port = args.includes('--port') ? Number(args[args.indexOf('--port') + 1]) : 7785;
 const nums = args.filter((a) => /^\d+$/.test(a) && a !== String(port)).map(Number);
-const chats = nums[0] ?? 2;
+const given = args.includes('--sessions') ? args[args.indexOf('--sessions') + 1].split(',').filter(Boolean) : null;
+const chats = given ? given.length : nums[0] ?? 2;
 const minutes = nums[1] ?? 25;
 const url = `http://127.0.0.1:${port}/event`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -15,7 +17,7 @@ const TOOLS = ['Read', 'Grep', 'Edit', 'Bash', 'Edit', 'Write', 'Read', 'Bash', 
 const end = Date.now() + minutes * 60000;
 
 async function chat(i) {
-  const id = `sim-wild-${i}-${Math.random().toString(16).slice(2, 10)}`;
+  const id = given?.[i] ?? `sim-wild-${i}-${Math.random().toString(16).slice(2, 10)}`;
   await post({ session_id: id, hook_event_name: 'SessionStart', source: 'startup' });
   await post({ session_id: id, hook_event_name: 'UserPromptSubmit', prompt: PROMPTS[i % PROMPTS.length] });
   let n = 0;
