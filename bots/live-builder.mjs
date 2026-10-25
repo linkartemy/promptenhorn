@@ -39,6 +39,7 @@ await cmd('gamerule send_command_feedback false');
 
 const bot = await makeBot(NAME);
 bot.loadPlugin(pathfinder);
+for (const ev of ['respawn', 'death', 'mount', 'forcedMove', 'game']) bot.on(ev, () => process.env.DEBUG && log('event', ev, bot.entity.position.toString()));
 await cmd(`op ${NAME}`);
 await cmd(`gamemode creative ${NAME}`);
 await sleep(500);

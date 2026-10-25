@@ -391,7 +391,7 @@ const isWalkable = (b) => !b || /carpet|pressure_plate/.test(b);
  * planes: floor block levels [F0, F1, ...]; flight i climbs from planes[i] to planes[i+1] in lane A (even) or B (odd).
  * Returns { cells: footprint [[x, z]] reserved on every floor, ends: approach/exit cells per plane }.
  */
-function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', under }) {
+function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', under = `${wood}_planks` }) {
   const xz = (u, v) => (axis === 'z' ? [v, u] : [u, v]);
   const facingOf = (d) => (axis === 'z' ? (d < 0 ? 'north' : 'south') : d < 0 ? 'west' : 'east');
   const us = new Set();
@@ -411,7 +411,7 @@ function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', u
       for (const v of lane) {
         const [x, z] = xz(u, v);
         if (k >= 0) bp.set(x, F0 + 1 + k, z, `${wood}_stairs[facing=${facingOf(d)},half=bottom]`);
-        if (under && k > 0) bp.set(x, F0 + k, z, under);
+        if (under && k > 0 && !nextToPane(bp, x, F0 + k, z, 1, 'stone')) bp.set(x, F0 + k, z, under);
         const feet = F0 + 2 + k;
         for (let yy = feet; yy <= feet + (k < R - 1 ? 2 : 1); yy++) bp.set(x, yy, z, null);
       }
@@ -436,7 +436,7 @@ function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', u
         const ePrevNext = a2 + d2 * (R + 1);
         for (const v of lane) {
           const [x, z] = xz(ePrevNext, v);
-          for (let y = planes[i] + 1; y < planes[i + 1]; y++) bp.set(x, y, z, under ?? `${wood}_planks`);
+          for (let y = planes[i] + 1; y < planes[i + 1]; y++) if (!nextToPane(bp, x, y, z, 1, 'stone')) bp.set(x, y, z, under ?? `${wood}_planks`);
         }
       }
       a2 = e;
@@ -948,7 +948,7 @@ function oldTownBody(bp, rng, o) {
         w, h: 2, lintel: lintel('x'), shutters: inOriel || !sh ? null : P.shutter, frame: !fach && !sh && !inOriel && P.style === 'painted' && winX.length <= 3 ? P.trim.block : undefined,
         box: !inOriel && !low && boxes && f <= 1 ? P.box : undefined, sill: inOriel || low ? undefined : sill,
       });
-      if (Math.abs(x - cx) >= 2 && Math.abs(x - bw) >= 1 && x + w - 1 !== bw) win(bp, rng, x, y, z1, 'north', { w, h: 2, lintel: lintel('x'), shutters: sh ? P.shutter : null, sill });
+      if (Math.abs(x - cx) >= 2 && Math.abs(x - bw) >= 1 && x + w - 1 !== bw && x + w < hallU - 1) win(bp, rng, x, y, z1, 'north', { w, h: 2, lintel: lintel('x'), shutters: sh ? P.shutter : null, sill });
     }
     for (const z of sideZ) {
       win(bp, rng, x1, y, z, 'west', { h: 2, lintel: lintel('z'), shutters: P.shutter, sill });
@@ -1932,6 +1932,7 @@ export function apartment(rng) {
     const s = Math.floor(y / 3);
     const isFront = z === z2 || z === z1;
     if (isFront ? structX.has(x) : structZ.has(z)) return concrete;
+    if (z === z1 && x > 5 && x < 11) return timber;
     const a = isFront ? x : z;
     return (a + 2 * (s % 2)) % 4 === 0 ? timber : 'glass_pane';
   };
@@ -1951,6 +1952,11 @@ export function apartment(rng) {
   // Stair core (two lanes along the back wall) from the lobby up to the roof garden.
   const planes = Array.from({ length: n + 1 }, (_, s) => 3 * s);
   const core = stairHall(bp, { axis: 'x', laneA: [5], laneB: [4], u0: 10, dir: -1, planes, wood });
+  const balconies = (s) => {
+    const ranges = s % 2 ? [[x1 + 1, cx - 1]] : [[cx + 1, x2 - 1]];
+    if (n <= 5 || s === n - 1) ranges.push(s % 2 ? [cx + 2, x2 - 1] : [x1 + 1, cx - 2]);
+    return ranges;
+  };
   for (let s = 0; s < n; s++) {
     const y = 3 * s + 1;
     // Stairwell walls with the flat's front door; bedroom and bathroom walls.
@@ -1959,7 +1965,7 @@ export function apartment(rng) {
     partition(bp, 5, 7, 11, 7, y, 2, concrete, [[cx, 7]], wood);
     partition(bp, 3, 7, 4, 7, y, 2, concrete, [[4, 7]], wood);
     partition(bp, 12, 7, 13, 7, y, 2, concrete, [[12, 7]], wood);
-    const keep = [...core.cells, ...(core.ends[3 * s] ?? []), [cx, 6], [cx, 8], [4, 8], [4, 6], [12, 8], [12, 6], [cx, z2 - 1]];
+    const keep = [...core.cells, ...(core.ends[3 * s] ?? []), [cx, 6], [cx, 8], [4, 8], [4, 6], [12, 8], [12, 6], [cx, z2 - 1], ...(s ? balconies(s).map(([a, b]) => [(a + b) >> 1, z2 - 1]) : [])];
     if (s === 0) {
       furnish(bp, rng, { x1: 3, z1: 8, x2: 13, z2: 10, y, h: 2 }, 'lobby', keep, wood, { items: ['plant', 'sofa', 'chest', 'plant'] });
       furnish(bp, rng, { x1: 3, z1: 4, x2: 4, z2: 6, y, h: 2 }, 'storage', keep, wood, { items: ['barrel', 'chest'] });
@@ -1978,9 +1984,7 @@ export function apartment(rng) {
   // Staggered balconies with French doors.
   for (let s = 1; s < n; s++) {
     const y = 3 * s;
-    const ranges = s % 2 ? [[x1 + 1, cx - 1]] : [[cx + 1, x2 - 1]];
-    if (n <= 5 || s === n - 1) ranges.push(s % 2 ? [cx + 2, x2 - 1] : [x1 + 1, cx - 2]);
-    for (const [a, b] of ranges) {
+    for (const [a, b] of balconies(s)) {
       const cells = [];
       for (let x = a; x <= b; x++) for (let k = 1; k <= 2; k++) cells.push([x, z2 + k]);
       deck(bp, rng, cells, y, { floor: `${slabOf}[type=top]`, railBlock: rail, openAtHouse: true, isHouse: (x, z) => z <= z2, flowers: 0 });
@@ -1990,7 +1994,7 @@ export function apartment(rng) {
       bp.set(dx, y + 2, z2, null);
       bp.door(dx, y + 1, z2, wood, 'south');
       bp.set(a, y + 1, z2 + 1, rng.pick(['potted_azalea_bush', 'potted_flowering_azalea_bush', 'potted_bamboo', 'potted_fern']));
-      if (b - a >= 3) bp.set(b, y + 1, z2 + 1, `${wood}_stairs[facing=north,half=bottom]`);
+      if (b - a >= 3) bp.set(b, y + 1, z2 + 1, `${wood}_stairs[facing=east,half=bottom]`);
     }
   }
   // Roof: stair house over the core, parapet, green roof with solar panels.
@@ -2011,8 +2015,8 @@ export function apartment(rng) {
     }
   // Shared garden: lawn, birches, raised beds, sandpit, bench.
   for (let z = z2 + 1; z <= 16; z++) bp.set(cx, 0, z, 'smooth_stone_slab[type=double]');
-  broadTree(bp, 3, 14, 5, 2, 'birch');
-  broadTree(bp, 13, 15, 4, 1, 'birch');
+  broadTree(bp, 2, 16, 4, 2, 'birch');
+  broadTree(bp, 14, 16, 4, 1, 'birch');
   const crop = () => rng.pick(['carrots[age=7]', 'potatoes[age=7]', 'beetroots[age=3]', 'wheat[age=7]']);
   for (let x = 10; x <= 12; x++) {
     bp.set(x, 0, 14, 'farmland[moisture=7]');

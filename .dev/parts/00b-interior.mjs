@@ -10,7 +10,7 @@ const isWalkable = (b) => !b || /carpet|pressure_plate/.test(b);
  * planes: floor block levels [F0, F1, ...]; flight i climbs from planes[i] to planes[i+1] in lane A (even) or B (odd).
  * Returns { cells: footprint [[x, z]] reserved on every floor, ends: approach/exit cells per plane }.
  */
-function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', under }) {
+function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', under = `${wood}_planks` }) {
   const xz = (u, v) => (axis === 'z' ? [v, u] : [u, v]);
   const facingOf = (d) => (axis === 'z' ? (d < 0 ? 'north' : 'south') : d < 0 ? 'west' : 'east');
   const us = new Set();
@@ -30,7 +30,7 @@ function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', u
       for (const v of lane) {
         const [x, z] = xz(u, v);
         if (k >= 0) bp.set(x, F0 + 1 + k, z, `${wood}_stairs[facing=${facingOf(d)},half=bottom]`);
-        if (under && k > 0) bp.set(x, F0 + k, z, under);
+        if (under && k > 0 && !nextToPane(bp, x, F0 + k, z, 1, 'stone')) bp.set(x, F0 + k, z, under);
         const feet = F0 + 2 + k;
         for (let yy = feet; yy <= feet + (k < R - 1 ? 2 : 1); yy++) bp.set(x, yy, z, null);
       }
@@ -55,7 +55,7 @@ function stairHall(bp, { axis, laneA, laneB, u0, dir, planes, wood = 'spruce', u
         const ePrevNext = a2 + d2 * (R + 1);
         for (const v of lane) {
           const [x, z] = xz(ePrevNext, v);
-          for (let y = planes[i] + 1; y < planes[i + 1]; y++) bp.set(x, y, z, under ?? `${wood}_planks`);
+          for (let y = planes[i] + 1; y < planes[i + 1]; y++) if (!nextToPane(bp, x, y, z, 1, 'stone')) bp.set(x, y, z, under ?? `${wood}_planks`);
         }
       }
       a2 = e;

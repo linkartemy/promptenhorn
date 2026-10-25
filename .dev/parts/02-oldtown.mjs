@@ -112,7 +112,7 @@ function oldTownBody(bp, rng, o) {
         w, h: 2, lintel: lintel('x'), shutters: inOriel || !sh ? null : P.shutter, frame: !fach && !sh && !inOriel && P.style === 'painted' && winX.length <= 3 ? P.trim.block : undefined,
         box: !inOriel && !low && boxes && f <= 1 ? P.box : undefined, sill: inOriel || low ? undefined : sill,
       });
-      if (Math.abs(x - cx) >= 2 && Math.abs(x - bw) >= 1 && x + w - 1 !== bw) win(bp, rng, x, y, z1, 'north', { w, h: 2, lintel: lintel('x'), shutters: sh ? P.shutter : null, sill });
+      if (Math.abs(x - cx) >= 2 && Math.abs(x - bw) >= 1 && x + w - 1 !== bw && x + w < hallU - 1) win(bp, rng, x, y, z1, 'north', { w, h: 2, lintel: lintel('x'), shutters: sh ? P.shutter : null, sill });
     }
     for (const z of sideZ) {
       win(bp, rng, x1, y, z, 'west', { h: 2, lintel: lintel('z'), shutters: P.shutter, sill });

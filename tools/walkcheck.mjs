@@ -139,6 +139,8 @@ export function analyse(list, { turns = 0, size = 21, spec = {} } = {}) {
         const sup = get(x, y - 1, z);
         const supName = blockName(cls(x, y, z) === 'low' ? get(x, y - 1, z) : sup);
         if (FURNITURE.test(supName) || cls(x, y - 1, z) === 'step' || cls(x, y - 1, z) === 'water') continue;
+        // A top slab standing on something is a table or counter, not a floor.
+        if (/_slab$/.test(supName) && blockProps(sup).type === 'top' && get(x, y - 2, z) && y > 1) continue;
         if (!covered(x, y, z)) continue;
         if (!levels.has(y)) levels.set(y, []);
         levels.get(y).push([x, z]);

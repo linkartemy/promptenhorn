@@ -7,7 +7,7 @@ const [dx = -0, dz = 60] = process.argv.slice(2).map(Number);
 const r = await rcon();
 const bot = await makeBot('Walker');
 bot.loadPlugin(pathfinder);
-await r.command('gamemode creative Walker');
+await r.command('gamemode creative Walker'); if (process.env.OP) await r.command('op Walker');
 await sleep(1000);
 const s = bot.entity.position.clone();
 const m = new Movements(bot); m.canDig = false; m.scafoldingBlocks = [bot.registry.itemsByName.dirt.id];
