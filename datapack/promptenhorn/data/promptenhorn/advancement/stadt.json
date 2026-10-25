@@ -1,0 +1,22 @@
+{
+  "parent": "promptenhorn:root",
+  "display": {
+    "icon": {
+      "id": "minecraft:golden_helmet"
+    },
+    "title": {
+      "text": "Städtli → Stadt"
+    },
+    "description": {
+      "text": "Квартал дорос до статуса Stadt"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

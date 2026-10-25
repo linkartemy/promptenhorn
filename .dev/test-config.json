@@ -1,0 +1,16 @@
+{
+  "port": 7778,
+  "serverDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-server",
+  "stateFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-state.json",
+  "heartbeatFile": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-heartbeat",
+  "archiveDir": "C:/Users/linka/Desktop/projects/promptenhorn/.dev/test-archive",
+  "blocksPerSecond": 40,
+  "maxBlocksPerTick": 30,
+  "resetForceloadsOnStart": true,
+  "searchOrigin": [
+    24000,
+    -24000
+  ],
+  "preset": "basic",
+  "generatorDir": "C:/Users/linka/Desktop/projects/promptenhorn/bridge/archive/live-2026-10-25"
+}

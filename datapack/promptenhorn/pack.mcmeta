@@ -1,0 +1,13 @@
+{
+  "pack": {
+    "description": "Promptenhorn: достижения и ратуша",
+    "min_format": [
+      94,
+      0
+    ],
+    "max_format": [
+      94,
+      999
+    ]
+  }
+}

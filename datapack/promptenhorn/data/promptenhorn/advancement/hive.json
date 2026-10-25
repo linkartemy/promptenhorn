@@ -1,0 +1,22 @@
+{
+  "parent": "promptenhorn:root",
+  "display": {
+    "icon": {
+      "id": "minecraft:beehive"
+    },
+    "title": {
+      "text": "Улей"
+    },
+    "description": {
+      "text": "Пять субагентов одновременно в одном чате"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

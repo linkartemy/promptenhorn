@@ -1,0 +1,22 @@
+{
+  "parent": "promptenhorn:root",
+  "display": {
+    "icon": {
+      "id": "minecraft:suspicious_stew"
+    },
+    "title": {
+      "text": "Перекур"
+    },
+    "description": {
+      "text": "Чат впервые сжал свою память"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "parent": "promptenhorn:root",
+  "display": {
+    "icon": {
+      "id": "minecraft:spruce_log"
+    },
+    "title": {
+      "text": "Марафон"
+    },
+    "description": {
+      "text": "Один чат построил пять зданий"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

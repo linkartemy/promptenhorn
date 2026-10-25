@@ -1,0 +1,22 @@
+{
+  "parent": "promptenhorn:first_stone",
+  "display": {
+    "icon": {
+      "id": "minecraft:oak_door"
+    },
+    "title": {
+      "text": "Десять крыш"
+    },
+    "description": {
+      "text": "В городе 10 домов"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

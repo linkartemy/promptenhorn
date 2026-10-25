@@ -1,0 +1,22 @@
+{
+  "parent": "promptenhorn:root",
+  "display": {
+    "icon": {
+      "id": "minecraft:lime_dye"
+    },
+    "title": {
+      "text": "Зелёный свет"
+    },
+    "description": {
+      "text": "Тесты прошли после трёх падений подряд"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

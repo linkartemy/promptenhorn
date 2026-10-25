@@ -1,0 +1,37 @@
+# Runtime data and worlds
+server/world*/
+server/logs/
+server/cache/
+server/libraries/
+server/versions/
+server/*.jar
+server/usercache.json
+server/ops.json
+server/banned-*.json
+server/whitelist.json
+server/server.properties
+state.json
+state.*.json
+.alps-heartbeat
+config.json
+
+# Dev / test infrastructure (large or machine-specific)
+.dev/test-server/
+.dev/wild-server/
+.dev/out/
+.dev/mojang.jar
+.dev/maps/
+.dev/*.log
+.dev/test-state*.json
+.dev/test-heartbeat
+node_modules/
+
+# Vanilla/Paper server artifacts (Mojang code must not be redistributed)
+.dev/libraries/
+.dev/versions/
+server/plugins/
+*.jar
+
+# Local city state copies (contain chat names)
+.dev/*state*.json
+.dev/old/

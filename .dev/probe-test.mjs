@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+import { Rcon } from '../bridge/rcon.mjs';
+import { Terrain, ChunkLoader } from '../bridge/terrain.mjs';
+const pw = fs.readFileSync('.dev/test-server/server.properties', 'utf8').match(/rcon.password=(.*)/)[1].trim();
+const r = new Rcon({ port: 25576, password: pw }); await r.connect();
+const cmd = async (c) => { const o = await r.command(c); if (process.env.V) console.log('>', c, '\n ', o.slice(0, 120)); return o; };
+const t = new Terrain(cmd, console.log, new ChunkLoader(cmd));
+process.env.V = '1';
+console.log(await t.withProbe(200, 200, async (probeAt) => [await probeAt(200, 200), await probeAt(280, 240), await probeAt(3000, 3000)]));
+r.close();

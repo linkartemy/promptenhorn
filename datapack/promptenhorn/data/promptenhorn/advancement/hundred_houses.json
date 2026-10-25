@@ -1,0 +1,22 @@
+{
+  "parent": "promptenhorn:ten_houses",
+  "display": {
+    "icon": {
+      "id": "minecraft:bell"
+    },
+    "title": {
+      "text": "Stadt"
+    },
+    "description": {
+      "text": "В городе 100 домов"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": false
+  },
+  "criteria": {
+    "granted": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

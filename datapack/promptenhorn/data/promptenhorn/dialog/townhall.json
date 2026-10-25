@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:notice",
+  "title": {
+    "text": "Ратуша Promptenhorn"
+  },
+  "body": {
+    "type": "minecraft:plain_message",
+    "contents": {
+      "text": "Список строителей: кто ждёт тебя, кто работает. Клик по имени — телепорт."
+    }
+  },
+  "action": {
+    "label": {
+      "text": "Открыть ратушу"
+    },
+    "action": {
+      "type": "minecraft:run_command",
+      "command": "/trigger alps_hall"
+    }
+  }
+}

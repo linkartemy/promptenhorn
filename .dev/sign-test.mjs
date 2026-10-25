@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import { Rcon } from '../bridge/rcon.mjs';
+const props = fs.readFileSync(new URL('./test-server/server.properties', import.meta.url), 'utf8');
+const rcon = new Rcon({ port: 25576, password: props.match(/^rcon\.password=(.*)$/m)[1].trim() });
+await rcon.connect();
+const c = (s) => rcon.command(s);
+console.log(await c('forceload add 19990 19990 19999 19999'));
+await new Promise(r=>setTimeout(r,1500));
+console.log(await c('setblock 19995 150 19995 stone'));
+console.log(await c('setblock 19995 150 19996 oak_wall_sign[facing=south]{front_text:{messages:["","GRAND","HOTEL",""],color:"yellow",has_glowing_text:1b},back_text:{messages:["","","",""]}}'));
+console.log(await c('data get block 19995 150 19996 front_text'));
+console.log(await c('setblock 19995 151 19995 shelf_test'));
+console.log(await c('setblock 19995 151 19996 spruce_shelf[facing=south]'));
+console.log(await c('execute if block 19995 151 19996 spruce_shelf'));
+rcon.close(); process.exit(0);
