@@ -1,0 +1,9 @@
+{
+  "common.city.founded": "Основан город {city}",
+  "common.district.new": "Новый квартал: {name}",
+  "common.teleport": "[телепорт]",
+  "common.houses.one": "{count} дом",
+  "common.houses.few": "{count} дома",
+  "common.houses.many": "{count} домов",
+  "common.houses.other": "{count} дома"
+}

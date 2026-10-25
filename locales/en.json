@@ -1,0 +1,7 @@
+{
+  "common.city.founded": "City {city} founded",
+  "common.district.new": "New district: {name}",
+  "common.teleport": "[teleport]",
+  "common.houses.one": "{count} house",
+  "common.houses.other": "{count} houses"
+}

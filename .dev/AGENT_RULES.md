@@ -27,7 +27,11 @@ Five agents work at the same time in this checkout. Read this before touching an
 | wild | `wild/` (new), `bots/wild/` (new), `.dev/wild-server/`, wild-mode settings entries |
 | terrain | `bridge/terrain.mjs`, `bridge/terrain-scan.mjs`, `bridge/city.mjs`, new `bridge/infra.mjs` (piers, quays, promenades, beaches, bridges, breakwaters), plot creation code in `bridge/bridge.mjs` (plotGround, createPlot, stitchSeam, lampPost, streetTexture), `tools/terrain-report.mjs` |
 | architect | `.dev/parts/*` → `bridge/buildings.mjs` (via `node .dev/assemble.mjs`), `bridge/blueprint.mjs`, `tools/walkcheck.mjs`, `tools/validate-blocks.mjs`, `tools/preview.mjs`, `docs/building-standards.md`, `docs/generator-contract.md` |
-| life | `bridge/features/life.mjs`, `bridge/smallforms.mjs`, `bridge/features/chronicle.mjs`, economy/stage logic, new `bridge/features/*` files for life/economy |
+| life | `bridge/features/life.mjs`, `bridge/smallforms.mjs`, `bridge/features/chronicle.mjs`, economy/stage logic, new `bridge/features/*` files for life/economy, and the strings of all other `bridge/features/*.mjs` you verify |
+| i18n | `bridge/i18n.mjs`, `locales/*.json`, `README*.md`, `docs/i18n.md`, `bridge/settings-page.mjs`, `bridge/map-page.mjs`, `bridge/settings.mjs` (labels), `configure.mjs`, `datapack/`, user-visible strings in the core of `bridge/bridge.mjs` (announce/welcome/scoreboard labels) |
+
+## Localization (applies to everyone)
+English is now the default language everywhere. Read `docs/i18n.md`. Every user-visible string you write or touch goes through `t()` from `bridge/i18n.mjs`; add the key with English text to `locales/en.json` and the Russian text to `locales/ru.json` (edit these two JSON files with small, careful edits — several agents add keys; re-read right before editing, keep keys sorted by module prefix, keep valid JSON). Before you finish, convert the remaining Russian/hard-coded user-visible strings in the files you own. Logs, comments and Swiss shop signs stay as they are.
 
 Shared, edit carefully and only small parts: `bridge/bridge.mjs`, `bridge/features/index.mjs`, `bridge/settings.mjs`, `README.md`, `docs/roadmap.md` (append your section; don't rewrite others').
 
